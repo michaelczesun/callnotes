@@ -156,18 +156,35 @@ bash callnotes-sync.sh      # Notizen + Audio auf die externe Platte spiegeln
 
 ## FAQ
 
-**Läuft das auch auf Windows oder Linux?**
-Nein — CallNotes ist bewusst macOS-only (14.2+): Die treiberlose Zwei-Spuren-Aufnahme
-basiert auf Core-Audio-*Process-Taps*, der Recorder ist ein Swift/launchd-Daemon, die
-UI eine SwiftUI-Menüleisten-App. Das **Konzept ist aber portierbar**: Windows hat
-WASAPI *Process Loopback Capture*, Linux hat PipeWire-Streams pro App, und die ganze
-Verarbeitungs-Pipeline (whisper.cpp, sherpa-onnx, ffmpeg, KI-Schritt) ist bereits
-plattformübergreifend. Ein Windows/Linux-Schwesterprojekt wäre ein eigenes Vorhaben —
-öffne ein Issue, wenn du eins nutzen würdest. PRs willkommen.
+<details>
+<summary><b>Läuft das auch auf Windows oder Linux?</b></summary>
+<br>
 
-**Warum kein App Store / signiertes Binary?**
-Es ist bewusst ein `git clone && ./install.sh`-Tool. Alles baut in Sekunden lokal;
-heruntergeladen werden nur die Whisper- und Diarisierungs-Modelle.
+Dieses Repo ist bewusst macOS-only (14.2+) — die treiberlose Zwei-Spuren-Aufnahme
+basiert auf Core-Audio-<i>Process-Taps</i>. Aber es gibt ein <b>experimentelles
+Windows-Schwesterprojekt</b> auf Basis von WASAPI Process Loopback mit derselben
+Pipeline und demselben Config-Format:
+<b><a href="https://github.com/michaelczesun/callnotes-windows">callnotes-windows</a></b> —
+per CI kompiliert, Tester gesucht. Linux (PipeWire-Streams pro App) ginge analog —
+öffne ein Issue, wenn du es nutzen würdest. PRs willkommen.
+</details>
+
+<details>
+<summary><b>Warum kein App Store / signiertes Binary?</b></summary>
+<br>
+
+Es ist bewusst ein <code>git clone && ./install.sh</code>-Tool. Alles baut in Sekunden
+lokal; heruntergeladen werden nur die Whisper- und Diarisierungs-Modelle.
+</details>
+
+<details>
+<summary><b>Welche Telefonie-Apps werden unterstützt?</b></summary>
+<br>
+
+Alles, was das Mikrofon nutzt: FaceTime, iPhone-Anrufe via Continuity, WhatsApp,
+Zoom, Teams, Signal, Telegram, Discord — eigene Apps nachtragen: siehe
+<i>Unterstützte Call-Apps</i> weiter oben.
+</details>
 
 ## Datenschutz & Recht
 

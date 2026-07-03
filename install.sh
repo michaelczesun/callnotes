@@ -74,6 +74,19 @@ if [ ! -f "$DIAMODELS/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx" ]; then
   [ -f "$DIAMODELS/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx" ] || echo "WARNUNG: Embedding-Download fehlgeschlagen."
 fi
 
+# Optional: Parakeet TDT v3 (~700 MB) — schnellste lokale Transkription, 25 EU-Sprachen
+if [ "${1:-}" = "--with-parakeet" ] && [ ! -d "$DIAMODELS/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" ]; then
+  echo "Lade Parakeet TDT v3 (~700 MB) …"
+  for i in 1 2 3 4 5 6; do
+    curl -sL -C - -o "$DIAMODELS/parakeet.tar.bz2" \
+      "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2" && break
+    sleep 2
+  done
+  tar xjf "$DIAMODELS/parakeet.tar.bz2" -C "$DIAMODELS" && rm -f "$DIAMODELS/parakeet.tar.bz2" \
+    && echo "Parakeet bereit — in den Einstellungen 'Parakeet' als Transkription waehlen." \
+    || echo "WARNUNG: Parakeet-Download fehlgeschlagen."
+fi
+
 # 5) launchd: Recorder-Daemon + Menueleisten-App
 # bootout braucht einen Moment; bootstrap direkt danach liefert sonst "Input/output error"
 sed "s|__HOME__|$HOME|g" launchd.plist.template > "$PLIST"

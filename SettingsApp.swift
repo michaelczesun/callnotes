@@ -10,7 +10,7 @@ import AppKit
 import AVFoundation
 
 let kConfigPath = NSString(string: "~/.config/callnotes/config.json").expandingTildeInPath
-let kAppVersion = "1.1.1"
+let kAppVersion = "1.2.0"
 let kRepoURL = "https://github.com/michaelczesun/callnotes"
 
 let isGerman: Bool = {
@@ -709,8 +709,8 @@ struct HelpView: View {
                     Text(L("EINSTELLUNGEN ERKLÄRT", "SETTINGS EXPLAINED")).font(.caption2.weight(.bold)).foregroundColor(.secondary)
                     HelpTopic(icon: "folder", title: L("Speicherorte", "Storage locations"),
                               body_: L("**Notizen**: Zielordner der fertigen .md-Notizen — ideal ist dein Obsidian-Vault. **Audio-Archiv**: die m4a-Dateien. **Kopie (extern)**: optionaler Spiegel z. B. auf der externen Platte; wird nach jedem Anruf synchronisiert, verpasste Syncs werden automatisch nachgeholt.", "**Notes**: destination folder for the finished .md notes — your Obsidian vault is ideal. **Audio archive**: the m4a files. **Mirror (external)**: an optional copy, e.g. on an external drive; synced after every call, and missed syncs are caught up automatically."))
-                    HelpTopic(icon: "cpu", title: L("Transkription: Lokal oder Groq", "Transcription: local or Groq"),
-                              body_: L("**Lokal** läuft komplett offline auf deinem Mac (privat, kostenlos). **Groq** ist eine Cloud-API und bei langen Gesprächen deutlich schneller — dafür verlässt das Audio deinen Mac. API-Key gratis auf console.groq.com erstellen; er wird nur lokal gespeichert.", "**Local** runs entirely offline on your Mac (private, free). **Groq** is a cloud API and noticeably faster for long calls — but the audio leaves your Mac. Get a free API key at console.groq.com; it's stored locally only."))
+                    HelpTopic(icon: "cpu", title: L("Transkription: Whisper, Parakeet oder Groq", "Transcription: Whisper, Parakeet or Groq"),
+                              body_: L("**Whisper** läuft komplett offline auf deinem Mac (privat, bewährt). **Parakeet** (NVIDIA TDT v3) läuft ebenfalls lokal, ist die schnellste Option und kennt keine Whisper-Wiederholungsschleifen — 25 europäische Sprachen; einmalig ~700 MB laden: `./install.sh --with-parakeet`. **Groq** ist eine Cloud-API und bei langen Gesprächen sehr schnell — dafür verlässt das Audio deinen Mac (Key gratis auf console.groq.com).", "**Whisper** runs entirely offline on your Mac (private, proven). **Parakeet** (NVIDIA TDT v3) also runs locally, is the fastest option and has no Whisper-style repetition loops — 25 European languages; one-time ~700 MB download: `./install.sh --with-parakeet`. **Groq** is a cloud API, very fast for long calls — but the audio leaves your Mac (free key at console.groq.com)."))
                     HelpTopic(icon: "brain", title: L("KI-Zusammenfassung: deine Wahl", "AI summary: your choice"),
                               body_: L("**Claude Code** (Standard) nutzt dein bestehendes Claude-Abo auf dem Mac. **Eigene KI** spricht jede OpenAI-kompatible API — OpenAI, Groq, OpenRouter oder komplett lokal & kostenlos via Ollama (dann bleibt wirklich alles auf deinem Mac). **Aus** liefert die Notiz nur mit Transkript. Ohne funktionierende KI bricht nichts: Die Notiz kommt trotzdem.", "**Claude Code** (default) uses your existing Claude subscription on the Mac. **Custom AI** talks to any OpenAI-compatible API — OpenAI, Groq, OpenRouter, or fully local & free via Ollama (then everything really does stay on your Mac). **Off** delivers the note with just the transcript. Nothing breaks without a working AI: the note still arrives."))
                     HelpTopic(icon: "list.bullet.rectangle", title: L("Notiz-Inhalte", "Note contents"),
@@ -862,8 +862,9 @@ struct WizardView: View {
                 WizardStepHeader(step: 3, total: total, title: L("Transkription & KI", "Transcription & AI"))
                 Text(L("Wo soll transkribiert werden?", "Where should transcription happen?")).font(.caption).foregroundColor(.secondary)
                 Picker("", selection: $store.transcriber) {
-                    Text(L("Lokal — offline & privat", "Local — offline & private")).tag("local")
-                    Text(L("Groq API — schneller", "Groq API — faster")).tag("groq")
+                    Text("Whisper").tag("local")
+                    Text("Parakeet").tag("parakeet")
+                    Text(L("Groq API", "Groq API")).tag("groq")
                 }
                 .pickerStyle(.segmented).labelsHidden()
                 if store.transcriber == "groq" {
@@ -1188,12 +1189,13 @@ struct SettingsSection: View {
             HStack(spacing: 3) {
                 Text(L("TRANSKRIPTION", "TRANSCRIPTION")).font(.caption2.weight(.bold)).foregroundColor(.secondary)
                 InfoTip(title: L("Transkription", "Transcription"),
-                        text: L("Lokal = whisper.cpp direkt auf dem Mac: offline, privat, kostenlos. Groq = Cloud-API, bei langen Gesprächen deutlich schneller — dafür verlässt das Audio deinen Mac.", "Local = whisper.cpp directly on the Mac: offline, private, free. Groq = cloud API, noticeably faster for long calls — but the audio leaves your Mac."))
+                        text: L("Whisper = whisper.cpp lokal: offline, privat, bewährt. Parakeet = NVIDIA Parakeet TDT v3 lokal via sherpa-onnx: die schnellste Option, 25 EU-Sprachen, keine Halluzinations-Schleifen (einmalig ~700 MB: ./install.sh --with-parakeet). Groq = Cloud-API — schnell, aber das Audio verlässt deinen Mac.", "Whisper = whisper.cpp locally: offline, private, proven. Parakeet = NVIDIA Parakeet TDT v3 locally via sherpa-onnx: the fastest option, 25 EU languages, no hallucination loops (one-time ~700 MB: ./install.sh --with-parakeet). Groq = cloud API — fast, but the audio leaves your Mac."))
             }
             .padding(.top, 4)
             Picker("", selection: $store.transcriber) {
-                Text(L("Lokal (Whisper, offline)", "Local (Whisper, offline)")).tag("local")
-                Text(L("Groq API (schneller)", "Groq API (faster)")).tag("groq")
+                Text("Whisper").tag("local")
+                Text("Parakeet").tag("parakeet")
+                Text("Groq API").tag("groq")
             }
             .pickerStyle(.segmented).labelsHidden()
             if store.transcriber == "groq" {

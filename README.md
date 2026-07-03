@@ -148,18 +148,34 @@ bash callnotes-sync.sh      # mirror notes + audio to the external drive
 
 ## FAQ
 
-**Does it run on Windows or Linux?**
-No — CallNotes is macOS-only (14.2+) by design: the driverless two-track capture is
-built on Core Audio *process taps*, the recorder is a Swift/launchd daemon and the UI
-is a SwiftUI menu bar app. The **concept ports**, though: Windows has WASAPI
-*process loopback capture*, Linux has PipeWire per-app streams, and the whole
-processing pipeline (whisper.cpp, sherpa-onnx diarization, ffmpeg, the AI step) is
-already cross-platform. A Windows/Linux sibling would be a separate project — open
-an issue if you'd use one, PRs welcome.
+<details>
+<summary><b>Does it run on Windows or Linux?</b></summary>
+<br>
 
-**Why no App Store / signed binary?**
-It's a `git clone && ./install.sh` tool for now. Everything builds locally in seconds;
-nothing is downloaded except the Whisper and diarization models.
+This repo is macOS-only (14.2+) by design — the driverless two-track capture is built
+on Core Audio <i>process taps</i>. But there is an <b>experimental Windows sibling</b>
+built on WASAPI process-loopback capture with the same pipeline and config format:
+<b><a href="https://github.com/michaelczesun/callnotes-windows">callnotes-windows</a></b> —
+CI-compiled, looking for testers. Linux (PipeWire per-app streams) would work the same
+way — open an issue if you'd use one, PRs welcome.
+</details>
+
+<details>
+<summary><b>Why no App Store / signed binary?</b></summary>
+<br>
+
+It's a <code>git clone && ./install.sh</code> tool for now. Everything builds locally
+in seconds; nothing is downloaded except the Whisper and diarization models.
+</details>
+
+<details>
+<summary><b>Which call apps are supported?</b></summary>
+<br>
+
+Anything that uses the microphone: FaceTime, iPhone calls via Continuity, WhatsApp,
+Zoom, Teams, Signal, Telegram, Discord — see <i>Supported call apps</i> above for
+adding your own.
+</details>
 
 ## Privacy & legal
 

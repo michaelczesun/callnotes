@@ -108,7 +108,7 @@ fail() {
 }
 
 [ -d "$REC" ] || { say "FEHLER: Verzeichnis fehlt: $REC"; exit 1; }
-if [ "$TRANSCRIBER" != "groq" ] || [ -z "$GROQ_KEY" ]; then
+if [ "$TRANSCRIBER" = "local" ]; then
   [ -n "$MODEL" ] && [ -f "$MODEL" ] || fail "Whisper-Modell fehlt (config 'whisperModel'): ${MODEL:-nicht gesetzt}"
 fi
 
@@ -156,6 +156,11 @@ transcribe() { # $1=caf $2=outbase(label) $3=wav behalten (optional "keep")
   if python3 -c "import sys;sys.exit(0 if float('$vol' or -99) < -50 else 1)" 2>/dev/null; then
     say "  Spur $1 ist stumm (max ${vol}dB) — uebersprungen"
     rm -f "$wav"; return 1
+  fi
+  # Parakeet TDT v3 (lokal via sherpa-onnx, sehr schnell, 25 EU-Sprachen) — Fallback whisper
+  if [ "$TRANSCRIBER" = "parakeet" ] && [ -x "$VENV_PY" ]; then
+    "$VENV_PY" "$SCRIPT_DIR/transcribe_parakeet.py" "$wav" "$REC/$2.json" 2>>"$REC/parakeet.log" \
+      || say "  Parakeet nicht verfuegbar (Modell fehlt? ./install.sh --with-parakeet) — Fallback whisper"
   fi
   # Groq-Cloud-Whisper (optional, schneller bei langen Calls) — Fallback lokal
   if [ "$TRANSCRIBER" = "groq" ] && [ -n "$GROQ_KEY" ]; then
