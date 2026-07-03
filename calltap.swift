@@ -1,4 +1,4 @@
-// calltap v1.2.0 — Telefonat-Recorder fuer macOS 14.2+ (Core-Audio Process Tap)
+// calltap v1.3.0 — Telefonat-Recorder fuer macOS 14.2+ (Core-Audio Process Tap)
 //
 // Nimmt bei Anrufen ZWEI getrennte Spuren auf:
 //   mic.caf    = Mikrofon (du)
@@ -601,6 +601,9 @@ func cmdWatch(configPath: String) {
     var silentSince: Date? = nil
     var lastStartError: Date? = nil
     var loggedUnknown = Set<String>()
+    // Nach "Nicht aufnehmen": diese App bis zum Ende des Anrufs nicht erneut aufnehmen
+    var suppressBundle: String? = nil
+    var suppressIdleSince: Date? = nil
 
     func spawnPost(_ dir: URL) {
         guard !post.isEmpty else { log("Kein postScript konfiguriert — Aufnahme bleibt in \(dir.path)"); return }
@@ -651,9 +654,27 @@ func cmdWatch(configPath: String) {
         }
     }
 
+    // "Nicht aufnehmen" aus dem Popup: sofort stoppen, alles loeschen, nichts verarbeiten —
+    // und dieselbe App bis zum Ende dieses Anrufs nicht erneut anfassen.
+    func discard(_ s: RecordingSession) {
+        _ = s.stopAndFinalize()
+        session = nil
+        silentSince = nil
+        suppressBundle = s.appBundle.isEmpty ? s.appName : s.appBundle
+        suppressIdleSince = nil
+        try? FileManager.default.removeItem(at: currentCallFile)
+        try? FileManager.default.removeItem(at: s.dir)
+        log("REC VERWORFEN (\(s.appBundle)) auf Nutzerwunsch — dieser Anruf wird nicht aufgenommen")
+    }
+
     let timer = DispatchSource.makeTimerSource(queue: q)
     timer.schedule(deadline: .now() + 1, repeating: 2.0)
     timer.setEventHandler {
+        // Abbruch-Wunsch der UI? (Marker-Datei im Aufnahme-Ordner)
+        if let s = session, FileManager.default.fileExists(atPath: s.dir.appendingPathComponent("abort").path) {
+            discard(s)
+        }
+
         var active: (AudioObjectID, String)? = nil
         for p in processObjects() {
             guard procIsRunningInput(p) else { continue }
@@ -670,6 +691,22 @@ func cmdWatch(configPath: String) {
                     loggedUnknown.insert(key)
                     log("INFO: Mikro aktiv bei nicht gelisteter App: \(key) (\(processName(procPID(p)))) — falls Telefonate darueber laufen, in callwatch.json bei 'apps' ergaenzen")
                 }
+            }
+        }
+
+        // Unterdrueckung nach "Nicht aufnehmen": solange dieselbe App das Mikro haelt,
+        // nicht neu starten; erst wenn der Anruf wirklich vorbei ist, wieder scharf.
+        if let sb = suppressBundle {
+            let stillActive = active.map { $0.1.isEmpty ? shortName($0.1, pid: procPID($0.0)) == sb : ($0.1 == sb) } ?? false
+            if stillActive {
+                suppressIdleSince = nil
+                return
+            }
+            if suppressIdleSince == nil { suppressIdleSince = Date() }
+            if let si = suppressIdleSince, Date().timeIntervalSince(si) >= Double(cfg.stopGraceSeconds) {
+                suppressBundle = nil
+                suppressIdleSince = nil
+                log("Abbruch-Sperre aufgehoben — naechster Anruf wird wieder aufgenommen")
             }
         }
 
@@ -720,7 +757,7 @@ func cmdWatch(configPath: String) {
 
 func usage() -> Never {
     print("""
-    calltap v1.2.0 — Telefonat-Recorder (2 Spuren: Mikro + Systemaudio der Call-App)
+    calltap v1.3.0 — Telefonat-Recorder (2 Spuren: Mikro + Systemaudio der Call-App)
 
     Nutzung:
       calltap procs [--watch]                     Audio-Prozesse (wer nutzt das Mikro?)

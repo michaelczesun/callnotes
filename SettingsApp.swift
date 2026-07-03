@@ -1,4 +1,4 @@
-// CallNotes.app v2.2.0 — Menueleisten-App fuer den Anruf-Autopiloten (calltap)
+// CallNotes.app v2.3.0 — Menueleisten-App fuer den Anruf-Autopiloten (calltap)
 // - Live-Pegel beider Spuren waehrend des Anrufs (du + Gegenseite)
 // - Popup bei Anruf-Erkennung: Teilnehmer-Namen (mehrere)
 // - Verarbeitungs-Status (Transkription/Diarisierung/KI) nach dem Auflegen
@@ -287,6 +287,15 @@ final class Store: ObservableObject {
     func key(_ p: PendingCall, _ s: PendingSpeaker) -> String { p.path + "|" + s.label }
 
     // MARK: Aktionen
+
+    // "Nicht aufnehmen": Marker-Datei setzen — der Daemon stoppt, loescht alles
+    // und laesst diesen Anruf in Ruhe.
+    func abortRecording() {
+        guard let call = currentCall else { return }
+        FileManager.default.createFile(atPath: call.dir + "/abort", contents: nil)
+        status = "Aufnahme wird verworfen — dieser Anruf bleibt privat."
+        CallPopupPanel.shared.hide()
+    }
 
     func saveParticipants() {
         guard let call = currentCall else { return }
@@ -816,6 +825,19 @@ struct ParticipantFieldsView: View {
                 Button(store.participantsSaved ? "Gespeichert ✓" : "Speichern") { store.saveParticipants() }
                     .buttonStyle(.borderedProminent).tint(.indigo).controlSize(.small)
                     .keyboardShortcut(.defaultAction)
+            }
+            Divider()
+            HStack(spacing: 4) {
+                Button { store.abortRecording() } label: {
+                    Label("Diesen Anruf nicht aufnehmen", systemImage: "mic.slash.fill")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.red)
+                .hoverHighlight()
+                InfoTip(title: "Nicht aufnehmen",
+                        text: "Verwirft die laufende Aufnahme sofort und unwiderruflich — es wird nichts gespeichert oder verarbeitet. Für diesen Anruf startet die Aufnahme auch nicht neu; ab dem nächsten Anruf ist der Autopilot wieder aktiv.")
+                Spacer()
             }
         }
         .onAppear { focusedIndex = 0 }
