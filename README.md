@@ -18,6 +18,11 @@
   <img src="https://img.shields.io/badge/macOS-14.2%2B-black?logo=apple" alt="macOS 14.2+">
   <img src="https://img.shields.io/badge/transcription-on--device-6D5CFF" alt="on-device">
   <img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-BF5AF2" alt="License">
+  <a href="https://github.com/michaelczesun/callnotes-windows"><img src="https://img.shields.io/badge/Windows%20version-experimental-2ea44f" alt="Windows version"></a>
+</p>
+
+<p align="center">
+  <sub>🪟 On Windows? There's an experimental sibling: <a href="https://github.com/michaelczesun/callnotes-windows"><b>callnotes-windows</b></a></sub>
 </p>
 
 ---
