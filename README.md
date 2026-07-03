@@ -35,6 +35,8 @@ a visible meeting bot, or a cloud subscription. CallNotes needs none of that:
   mix into "Speaker 1..N" — you match names via short audio snippets and a dropdown.
 - Transcription runs **on-device** (whisper.cpp, Metal) — or via Groq API if you
   prefer speed over privacy. Your choice, one toggle.
+- **Bring your own AI** for summaries: Claude Code (default), any OpenAI-compatible
+  API (OpenAI, Groq, OpenRouter), fully local via **Ollama** — or none at all.
 
 ## What you get after hanging up
 
@@ -100,6 +102,7 @@ settings. Highlights:
 | `apps` | bundle IDs that trigger recording |
 | `tapScope` | `app` = record only the call app family (default), `global` = all system audio |
 | `transcriber` / `groqApiKey` | `local` (whisper.cpp) or `groq` (cloud, faster) |
+| `summarizer` (+ `summarizerUrl/Model/ApiKey`) | `claude` (Claude Code CLI), `openai` (any OpenAI-compatible API incl. Ollama/Groq/OpenRouter) or `off` |
 | `noteSections` | which sections Claude writes: summary, discussed, todos, follow-up email |
 | `destinations` | extra delivery: Apple Notes, Nextcloud (WebDAV), Notion |
 | `notesDir` / `audioDir` / `mirrorDir` | where notes, audio and the external-drive mirror go |

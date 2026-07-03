@@ -1,4 +1,4 @@
-// CallNotes.app v2.3.0 — Menueleisten-App fuer den Anruf-Autopiloten (calltap)
+// CallNotes.app v2.4.0 — Menueleisten-App fuer den Anruf-Autopiloten (calltap)
 // - Live-Pegel beider Spuren waehrend des Anrufs (du + Gegenseite)
 // - Popup bei Anruf-Erkennung: Teilnehmer-Namen (mehrere)
 // - Verarbeitungs-Status (Transkription/Diarisierung/KI) nach dem Auflegen
@@ -64,6 +64,10 @@ final class Store: ObservableObject {
     // Transkription + Integrationen
     @Published var transcriber = "local"
     @Published var groqApiKey = ""
+    @Published var summarizer = "claude"
+    @Published var sumUrl = ""
+    @Published var sumModel = ""
+    @Published var sumKey = ""
     @Published var sections: Set<String> = ["kurzfassung", "besprochen", "todos"]
     @Published var destNotes = false
     @Published var destNextcloud = false
@@ -120,6 +124,10 @@ final class Store: ObservableObject {
             mirrorDir = obj["mirrorDir"] as? String ?? ""
             transcriber = obj["transcriber"] as? String ?? "local"
             groqApiKey = obj["groqApiKey"] as? String ?? ""
+            summarizer = obj["summarizer"] as? String ?? "claude"
+            sumUrl = obj["summarizerUrl"] as? String ?? ""
+            sumModel = obj["summarizerModel"] as? String ?? ""
+            sumKey = obj["summarizerApiKey"] as? String ?? ""
             if let s = obj["noteSections"] as? [String] { sections = Set(s) }
             let dest = obj["destinations"] as? [String: Any] ?? [:]
             destNotes = dest["appleNotes"] as? Bool ?? false
@@ -149,6 +157,10 @@ final class Store: ObservableObject {
         raw["mirrorDir"] = mirrorDir
         raw["transcriber"] = transcriber
         raw["groqApiKey"] = groqApiKey
+        raw["summarizer"] = summarizer
+        raw["summarizerUrl"] = sumUrl
+        raw["summarizerModel"] = sumModel
+        raw["summarizerApiKey"] = sumKey
         raw["noteSections"] = Array(sections).sorted()
         raw["destinations"] = ["appleNotes": destNotes, "nextcloud": destNextcloud, "notion": destNotion]
         raw["nextcloudUrl"] = ncUrl
@@ -529,6 +541,8 @@ struct HelpView: View {
                               body_: "**Notizen**: Zielordner der fertigen .md-Notizen — ideal ist dein Obsidian-Vault. **Audio-Archiv**: die m4a-Dateien. **Kopie (extern)**: optionaler Spiegel z. B. auf der externen Platte; wird nach jedem Anruf synchronisiert, verpasste Syncs werden automatisch nachgeholt.")
                     HelpTopic(icon: "cpu", title: "Transkription: Lokal oder Groq",
                               body_: "**Lokal** läuft komplett offline auf deinem Mac (privat, kostenlos). **Groq** ist eine Cloud-API und bei langen Gesprächen deutlich schneller — dafür verlässt das Audio deinen Mac. API-Key gratis auf console.groq.com erstellen; er wird nur lokal gespeichert.")
+                    HelpTopic(icon: "brain", title: "KI-Zusammenfassung: deine Wahl",
+                              body_: "**Claude Code** (Standard) nutzt dein bestehendes Claude-Abo auf dem Mac. **Eigene KI** spricht jede OpenAI-kompatible API — OpenAI, Groq, OpenRouter oder komplett lokal & kostenlos via Ollama (dann bleibt wirklich alles auf deinem Mac). **Aus** liefert die Notiz nur mit Transkript. Ohne funktionierende KI bricht nichts: Die Notiz kommt trotzdem.")
                     HelpTopic(icon: "list.bullet.rectangle", title: "Notiz-Inhalte",
                               body_: "Wähle, welche Abschnitte die KI schreibt: Kurzfassung, besprochene Punkte, Zusagen & To-dos, und auf Wunsch einen fertigen **Follow-up-Mail-Entwurf** an die Gegenseite.")
                     HelpTopic(icon: "square.and.arrow.up", title: "Ablage-Ziele",
@@ -993,6 +1007,33 @@ struct SettingsSection: View {
                         .textFieldStyle(.roundedBorder).font(.caption)
                     InfoTip(title: "Groq API-Key",
                             text: "Gratis auf console.groq.com erstellen. Der Key wird nur lokal gespeichert (~/.config/callnotes) und nie hochgeladen.")
+                }
+            }
+
+            HStack(spacing: 3) {
+                Text("KI-ZUSAMMENFASSUNG").font(.caption2.weight(.bold)).foregroundColor(.secondary)
+                InfoTip(title: "KI-Zusammenfassung",
+                        text: "Wer schreibt Kurzfassung & To-dos? Claude Code nutzt dein bestehendes Claude-Abo (Standard). „Eigene KI\u{201C} spricht jede OpenAI-kompatible API — OpenAI, Groq, OpenRouter oder komplett lokal via Ollama. „Aus\u{201C} = Notiz nur mit Transkript.")
+            }
+            .padding(.top, 4)
+            Picker("", selection: $store.summarizer) {
+                Text("Claude Code").tag("claude")
+                Text("Eigene KI (OpenAI-API)").tag("openai")
+                Text("Aus").tag("off")
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            if store.summarizer == "openai" {
+                HStack(spacing: 4) {
+                    TextField("API-URL, z. B. https://api.openai.com/v1", text: $store.sumUrl)
+                        .textFieldStyle(.roundedBorder).font(.caption)
+                    InfoTip(title: "API-URL",
+                            text: "Basis-URL der OpenAI-kompatiblen API:\nOpenAI: https://api.openai.com/v1\nGroq: https://api.groq.com/openai/v1\nOpenRouter: https://openrouter.ai/api/v1\nOllama (lokal, kostenlos): http://localhost:11434/v1")
+                }
+                HStack {
+                    TextField("Modell, z. B. gpt-4o-mini", text: $store.sumModel)
+                        .textFieldStyle(.roundedBorder).font(.caption)
+                    SecureField("API-Key (bei Ollama leer)", text: $store.sumKey)
+                        .textFieldStyle(.roundedBorder).font(.caption)
                 }
             }
 

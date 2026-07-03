@@ -37,6 +37,10 @@ p("DIA_THRESHOLD", str(d.get("diarizeThreshold") or 0.6))
 p("VENV_PY", path("venvPython", "~/.local/share/callnotes/venv/bin/python3"))
 p("TRANSCRIBER", d.get("transcriber") or "local")
 p("GROQ_KEY_CFG", d.get("groqApiKey") or "")
+p("SUMMARIZER", d.get("summarizer") or "claude")
+p("SUM_URL", (d.get("summarizerUrl") or "").rstrip("/"))
+p("SUM_MODEL", d.get("summarizerModel") or "")
+p("SUM_KEY", d.get("summarizerApiKey") or "")
 p("SECTIONS", ",".join(d.get("noteSections") or ["kurzfassung", "besprochen", "todos"]))
 dest = d.get("destinations") or {}
 p("DEST_NOTES", "1" if dest.get("appleNotes") else "0")
@@ -189,10 +193,41 @@ if [ -f "$REC/participants.json" ]; then
   PARTICIPANTS=$(python3 -c "import json;print(', '.join(json.load(open('$REC/participants.json')).get('names',[])))" 2>/dev/null || echo "")
 fi
 
-# --- Claude-Zusammenfassung ------------------------------------------------------
+# --- KI-Zusammenfassung (Claude Code, OpenAI-kompatible API oder aus) --------------
 SUMMARY="$REC/summary.md"
+
+# Jede OpenAI-kompatible Chat-API: OpenAI, Groq, OpenRouter, Ollama (lokal), …
+summarize_openai() {
+  python3 - "$REC/prompt.txt" "$SUM_URL" "$SUM_MODEL" "$SUM_KEY" > "$SUMMARY" 2>>"$REC/summarizer.log" <<'PY'
+import json, sys, urllib.request
+prompt_file, base, model, key = sys.argv[1:5]
+prompt = open(prompt_file, encoding="utf-8").read()
+payload = {"model": model, "temperature": 0.2,
+           "messages": [{"role": "user", "content": prompt}]}
+# User-Agent noetig: manche API-Firewalls (z.B. Groq) blocken urllib-Default mit 403
+headers = {"Content-Type": "application/json", "User-Agent": "CallNotes"}
+if key:
+    headers["Authorization"] = f"Bearer {key}"
+req = urllib.request.Request(base + "/chat/completions",
+                             data=json.dumps(payload).encode(), headers=headers)
+resp = json.load(urllib.request.urlopen(req, timeout=180))
+text = (resp.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+if not text:
+    sys.exit(1)
+# manche Modelle packen die Antwort in einen Codeblock
+if text.startswith("```"):
+    text = text.strip("`").lstrip("markdown").strip()
+print(text)
+PY
+}
+
 make_summary() {
-  [ -n "$CLAUDE_BIN" ] && command -v "$CLAUDE_BIN" >/dev/null 2>&1 || return 1
+  [ "$SUMMARIZER" = "off" ] && return 1
+  if [ "$SUMMARIZER" = "openai" ]; then
+    [ -n "$SUM_URL" ] && [ -n "$SUM_MODEL" ] || { say "  KI-Zusammenfassung: URL/Modell fehlen (Einstellungen)"; return 1; }
+  else
+    [ -n "$CLAUDE_BIN" ] && command -v "$CLAUDE_BIN" >/dev/null 2>&1 || return 1
+  fi
   local extra=""
   if [ "$N_SPEAKERS" -gt 1 ]; then
     extra="Auf der Gegenseite wurden $N_SPEAKERS verschiedene Stimmen erkannt (\"Sprecher 1..$N_SPEAKERS\", nummeriert nach erster Wortmeldung)."
@@ -243,18 +278,22 @@ PROMPT
     cat "$DIALOG"
   } > "$REC/prompt.txt"
 
-  ( "$CLAUDE_BIN" -p --model sonnet < "$REC/prompt.txt" > "$SUMMARY" 2>>"$REC/claude.log" ) &
-  local pid=$! w=0
-  while kill -0 $pid 2>/dev/null && [ $w -lt 300 ]; do sleep 5; w=$((w+5)); done
-  if kill -0 $pid 2>/dev/null; then kill -9 $pid 2>/dev/null; say "  Claude-Timeout (300s)"; return 1; fi
-  wait $pid || return 1
+  if [ "$SUMMARIZER" = "openai" ]; then
+    summarize_openai || { say "  KI-API nicht erreichbar ($SUM_URL) — Details in summarizer.log"; return 1; }
+  else
+    ( "$CLAUDE_BIN" -p --model sonnet < "$REC/prompt.txt" > "$SUMMARY" 2>>"$REC/claude.log" ) &
+    local pid=$! w=0
+    while kill -0 $pid 2>/dev/null && [ $w -lt 300 ]; do sleep 5; w=$((w+5)); done
+    if kill -0 $pid 2>/dev/null; then kill -9 $pid 2>/dev/null; say "  Claude-Timeout (300s)"; return 1; fi
+    wait $pid || return 1
+  fi
   grep -q '^#' "$SUMMARY" || return 1
 }
 
 phase "KI-Zusammenfassung…"
-say "Zusammenfassung (Claude) …"
+say "Zusammenfassung ($SUMMARIZER) …"
 if ! make_summary; then
-  say "  Claude nicht verfuegbar — Notiz ohne Zusammenfassung"
+  [ "$SUMMARIZER" = "off" ] && say "  KI-Zusammenfassung deaktiviert — Notiz mit Transkript" || say "  KI nicht verfuegbar — Notiz ohne Zusammenfassung"
   {
     echo "# Telefonat via $APP — $DATE_PART $TIME_NICE"
     echo
@@ -463,7 +502,8 @@ req = urllib.request.Request("https://api.notion.com/v1/pages",
                              data=json.dumps(payload).encode(),
                              headers={"Authorization": f"Bearer {token}",
                                       "Notion-Version": "2022-06-28",
-                                      "Content-Type": "application/json"})
+                                      "Content-Type": "application/json",
+                                      "User-Agent": "CallNotes"})
 urllib.request.urlopen(req, timeout=30).read()
 PY
 fi

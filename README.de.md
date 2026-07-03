@@ -36,6 +36,9 @@ Jedes Call-Recording-Tool braucht entweder einen virtuellen Audio-Treiber
   Dropdown zu.
 - Transkription läuft **on-device** (whisper.cpp, Metal) — oder über die Groq-API,
   wenn dir Tempo wichtiger ist als Offline. Ein Schalter.
+- **KI deiner Wahl** für die Zusammenfassung: Claude Code (Standard), jede
+  OpenAI-kompatible API (OpenAI, Groq, OpenRouter) oder komplett lokal via **Ollama** —
+  oder ganz ohne.
 
 ## Was du nach dem Auflegen bekommst
 
@@ -106,6 +109,7 @@ Einstellungen in der Menüleiste. Die wichtigsten Felder:
 | `apps` | Bundle-IDs, deren Mikrofon-Nutzung eine Aufnahme startet |
 | `tapScope` | `app` = nur die Call-App-Familie aufnehmen (Default), `global` = gesamtes Systemaudio |
 | `transcriber` / `groqApiKey` | `local` (whisper.cpp) oder `groq` (Cloud, schneller) |
+| `summarizer` (+ `summarizerUrl/Model/ApiKey`) | `claude` (Claude Code CLI), `openai` (jede OpenAI-kompatible API inkl. Ollama/Groq/OpenRouter) oder `off` |
 | `noteSections` | welche Abschnitte die KI schreibt: Kurzfassung, Besprochen, To-dos, Follow-up-Mail |
 | `destinations` | zusätzliche Ablage: Apple Notes, Nextcloud (WebDAV), Notion |
 | `notesDir` / `audioDir` / `mirrorDir` | wohin Notizen, Audio und der Externe-Platte-Spiegel gehen |
