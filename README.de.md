@@ -154,6 +154,21 @@ bash callnotes-sync.sh      # Notizen + Audio auf die externe Platte spiegeln
 - Fehlgeschlagene Verarbeitungen liegen mit Roh-Audio in `~/CallNotes/failed/` und
   lassen sich mit `bash process-call.sh <ordner>` erneut anstoßen.
 
+## FAQ
+
+**Läuft das auch auf Windows oder Linux?**
+Nein — CallNotes ist bewusst macOS-only (14.2+): Die treiberlose Zwei-Spuren-Aufnahme
+basiert auf Core-Audio-*Process-Taps*, der Recorder ist ein Swift/launchd-Daemon, die
+UI eine SwiftUI-Menüleisten-App. Das **Konzept ist aber portierbar**: Windows hat
+WASAPI *Process Loopback Capture*, Linux hat PipeWire-Streams pro App, und die ganze
+Verarbeitungs-Pipeline (whisper.cpp, sherpa-onnx, ffmpeg, KI-Schritt) ist bereits
+plattformübergreifend. Ein Windows/Linux-Schwesterprojekt wäre ein eigenes Vorhaben —
+öffne ein Issue, wenn du eins nutzen würdest. PRs willkommen.
+
+**Warum kein App Store / signiertes Binary?**
+Es ist bewusst ein `git clone && ./install.sh`-Tool. Alles baut in Sekunden lokal;
+heruntergeladen werden nur die Whisper- und Diarisierungs-Modelle.
+
 ## Datenschutz & Recht
 
 Standardmäßig läuft alles lokal (Whisper on-device); nur die Zusammenfassung geht —
