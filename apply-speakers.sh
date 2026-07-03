@@ -20,9 +20,9 @@ if not os.path.exists(note):
     sys.exit(f"Notiz fehlt: {note}")
 
 import re as _re
-# robust gegen Semikolons in Namen: Segmente laufen bis zum naechsten "Sprecher N="
+# robust gegen Semikolons in Namen: Segmente laufen bis zum naechsten "Sprecher/Speaker N="
 pairs = []
-for m in _re.finditer(r"(Sprecher \d+)\s*=\s*([^;]*(?:;(?!\s*Sprecher \d+\s*=)[^;]*)*)", mapping or ""):
+for m in _re.finditer(r"((?:Sprecher|Speaker) \d+)\s*=\s*([^;]*(?:;(?!\s*(?:Sprecher|Speaker) \d+\s*=)[^;]*)*)", mapping or ""):
     k, v = m.group(1).strip(), m.group(2).strip().rstrip(";").strip()
     if k and v and v != "?" and v != k:
         pairs.append((k, v))

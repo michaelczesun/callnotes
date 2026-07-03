@@ -66,6 +66,11 @@ Everything lives in the menu bar (phone icon):
 - **Recent calls**, storage locations (incl. external drive), API keys, integrations
 - **First-run setup wizard**, a built-in **help section**, and an ⓘ explainer next to
   every setting — you never have to guess what a field does
+- **English & German UI** — follows your system language automatically
+
+<p align="center">
+  <img src="assets/screenshots.png" alt="CallNotes menu bar app — live level tracks, speaker matching, settings" width="100%">
+</p>
 
 ## Install
 

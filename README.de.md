@@ -71,6 +71,11 @@ Alles sitzt in der Menüleiste (Telefon-Symbol):
 - **Letzte Anrufe**, Speicherorte (inkl. externer Platte), API-Keys, Integrationen
 - **Ersteinrichtungs-Assistent**, eingebauter **Hilfebereich** und ein ⓘ neben
   jedem Feld — du musst nie raten, was eine Einstellung tut
+- **Deutsch & Englisch** — die App folgt automatisch deiner Systemsprache
+
+<p align="center">
+  <img src="assets/screenshots.png" alt="CallNotes Menüleisten-App — Live-Pegel, Sprecher-Zuordnung, Einstellungen" width="100%">
+</p>
 
 ## Installation
 

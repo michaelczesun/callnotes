@@ -322,3 +322,53 @@ savePNG(drawBanner(bannerDE), to: assetsDir.appendingPathComponent("banner.de.pn
 savePNG(drawDiagram(diagramEN), to: assetsDir.appendingPathComponent("how-it-works.png"), w: 760, h: 1150)
 savePNG(drawDiagram(diagramDE), to: assetsDir.appendingPathComponent("how-it-works.de.png"), w: 760, h: 1150)
 print("OK: banner.png + banner.de.png + how-it-works.png + how-it-works.de.png")
+
+// ---------- Screenshot-Compose (assets/screenshots.png) ----------
+
+func drawRotatedShot(_ url: URL, center: NSPoint, height: CGFloat, rotation: CGFloat) {
+    guard let img = NSImage(contentsOf: url) else { return }
+    let scale = height / img.size.height
+    let w = img.size.width * scale
+    NSGraphicsContext.current?.saveGraphicsState()
+    let t = NSAffineTransform()
+    t.translateX(by: center.x, yBy: center.y)
+    t.rotate(byDegrees: rotation)
+    t.concat()
+    let sh = NSShadow()
+    sh.shadowBlurRadius = 20
+    sh.shadowColor = NSColor.black.withAlphaComponent(0.65)
+    sh.shadowOffset = NSSize(width: 0, height: -7)
+    sh.set()
+    img.draw(in: NSRect(x: -w / 2, y: -height / 2, width: w, height: height))
+    NSShadow().set()
+    sketchRect(NSRect(x: -w / 2, y: -height / 2, width: w, height: height),
+               color: ink.withAlphaComponent(0.8), width: 2.2)
+    NSGraphicsContext.current?.restoreGraphicsState()
+}
+
+let shotsDir = assetsDir.appendingPathComponent("shots")
+let cw: CGFloat = 1280, ch: CGFloat = 880
+srand48(99)
+let shotsImg = NSImage(size: NSSize(width: cw, height: ch), flipped: false) { _ in
+    bgDark.setFill()
+    NSRect(x: 0, y: 0, width: cw, height: ch).fill()
+
+    drawRotatedShot(shotsDir.appendingPathComponent("shot-settings.png"),
+                    center: NSPoint(x: 990, y: 420), height: 660, rotation: 2.2)
+    drawRotatedShot(shotsDir.appendingPathComponent("shot-call.png"),
+                    center: NSPoint(x: 300, y: 430), height: 640, rotation: -2.4)
+    drawRotatedShot(shotsDir.appendingPathComponent("shot-pending.png"),
+                    center: NSPoint(x: 648, y: 300), height: 430, rotation: -1.2)
+
+    handText("live level tracks while you talk", center: NSPoint(x: 250, y: 828), size: 27, color: indigo, rotation: -2)
+    sketchArrow(NSPoint(x: 300, y: 806), NSPoint(x: 320, y: 700), color: indigo, width: 2.6)
+
+    handText("match voices to names", center: NSPoint(x: 655, y: 610), size: 26, color: green, rotation: 1.5)
+    sketchArrow(NSPoint(x: 655, y: 588), NSPoint(x: 650, y: 500), color: green, width: 2.6)
+
+    handText("your AI · your storage · your language", center: NSPoint(x: 965, y: 830), size: 26, color: violet, rotation: 1.5)
+    sketchArrow(NSPoint(x: 990, y: 808), NSPoint(x: 985, y: 762), color: violet, width: 2.6)
+    return true
+}
+savePNG(shotsImg, to: assetsDir.appendingPathComponent("screenshots.png"), w: 1280, h: 880)
+print("OK: assets/screenshots.png")

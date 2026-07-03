@@ -10,8 +10,14 @@ import AppKit
 import AVFoundation
 
 let kConfigPath = NSString(string: "~/.config/callnotes/config.json").expandingTildeInPath
-let kAppVersion = "1.0.0"
+let kAppVersion = "1.1.0"
 let kRepoURL = "https://github.com/michaelczesun/callnotes"
+
+let isGerman: Bool = {
+    if let o = ProcessInfo.processInfo.environment["CALLNOTES_LANG"] { return o.hasPrefix("de") }
+    return Locale.preferredLanguages.first?.hasPrefix("de") ?? false
+}()
+func L(_ de: String, _ en: String) -> String { isGerman ? de : en }
 
 func tilde(_ p: String) -> String {
     let home = NSHomeDirectory()
@@ -25,8 +31,8 @@ func safeSymbol(_ candidates: [String]) -> String {
     return "phone.fill"
 }
 
-let kKeep = "— Label behalten —"
-let kCustom = "Eigener Name…"
+let kKeep = L("— Label behalten —", "— keep label —")
+let kCustom = L("Eigener Name…", "Custom name…")
 let accent = LinearGradient(colors: [Color(red: 0.42, green: 0.36, blue: 1.0), Color(red: 0.75, green: 0.35, blue: 0.95)],
                             startPoint: .topLeading, endPoint: .bottomTrailing)
 
@@ -107,8 +113,12 @@ final class Store: ObservableObject {
     private var poppedFor = ""
     private var tick = 0
 
-    init() {
+    init(showcase: String? = nil) {
         load()
+        if let mode = showcase {
+            setupDemo(mode)
+            return // Schaufenster: keine Timer, kein Wizard, kein Update-Check
+        }
         poll()
         // .common-Mode: weiterlaufen, auch wenn ein Menue/Drag die RunLoop im Tracking haelt
         let t = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in self?.poll() }
@@ -122,6 +132,52 @@ final class Store: ObservableObject {
                 guard let self, !self.setupDone else { return }
                 SetupWizard.shared.show(store: self)
             }
+        }
+    }
+
+    // Demo-Zustand fuer README-Screenshots (CALLNOTES_SHOWCASE=call|pending|settings)
+    private func setupDemo(_ mode: String) {
+        daemonRunning = true
+        status = ""
+        failedCount = 0
+        updateAvailable = nil
+        // ALLE Werte neutral ueberschreiben — Screenshots landen im public Repo,
+        // hier darf nichts aus der echten Config durchsickern (ntfy-Topic, Keys!)
+        notesDir = "~/CallNotes/notes"
+        audioDir = "~/CallNotes/audio"
+        mirrorDir = "/Volumes/Backup/CallNotes"
+        transcriber = "local"
+        groqApiKey = ""
+        summarizer = "claude"
+        sumUrl = ""; sumModel = ""; sumKey = ""
+        sections = ["kurzfassung", "besprochen", "todos"]
+        destNotes = true
+        destNextcloud = false
+        destNotion = false
+        ncUrl = ""; ncUser = ""; ncPass = ""
+        notionToken = ""; notionParent = ""
+        ntfyUrl = ""
+        lastNotes = ["2026-07-03-1042-call-anna-website-relaunch.md",
+                     "2026-07-02-1731-call-stefan-catering-offer.md"]
+        if mode == "call" {
+            currentCall = CurrentCall(dir: "/tmp/callnotes-demo", appName: "WhatsApp",
+                                      start: Date().addingTimeInterval(-222))
+            callElapsed = "3:42"
+            micLevels = (0..<42).map { 0.08 + 0.85 * abs(sin(Double($0) * 0.52)) }
+            sysLevels = (0..<42).map { 0.08 + 0.80 * abs(sin(Double($0) * 0.37 + 1.4)) }
+            participantFields = ["Anna", ""]
+        }
+        if mode == "pending" {
+            let sp = [PendingSpeaker(label: L("Sprecher 1", "Speaker 1"), clip: "", suggestion: "Anna", totalSec: 34),
+                      PendingSpeaker(label: L("Sprecher 2", "Speaker 2"), clip: "", suggestion: "Stefan", totalSec: 21)]
+            let p = PendingCall(path: "/tmp/callnotes-demo.json", stamp: "2026-07-03_104233", app: "zoom",
+                                note: "/tmp/demo.md", speakers: sp, participants: ["Anna", "Stefan"])
+            pendings = [p]
+            for s in sp { picks[key(p, s)] = s.suggestion }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self else { return }
+            ShowcaseWindow.show(store: self, mode: mode)
         }
     }
 
@@ -155,7 +211,7 @@ final class Store: ObservableObject {
                 scriptDir = (untilde(post) as NSString).deletingLastPathComponent
             }
         } else {
-            status = "Keine Config — install.sh ausführen."
+            status = L("Keine Config — install.sh ausführen.", "No config — run install.sh.")
         }
         refreshDaemon()
         refreshNotes()
@@ -344,7 +400,7 @@ final class Store: ObservableObject {
     func abortRecording() {
         guard let call = currentCall else { return }
         FileManager.default.createFile(atPath: call.dir + "/abort", contents: nil)
-        status = "Aufnahme wird verworfen — dieser Anruf bleibt privat."
+        status = L("Aufnahme wird verworfen — dieser Anruf bleibt privat.", "Discarding recording — this call stays private.")
         CallPopupPanel.shared.hide()
     }
 
@@ -354,7 +410,7 @@ final class Store: ObservableObject {
         if let d = try? JSONSerialization.data(withJSONObject: ["names": names], options: [.prettyPrinted]) {
             try? d.write(to: URL(fileURLWithPath: call.dir + "/participants.json"))
             participantsSaved = true
-            status = names.isEmpty ? "Teilnehmer geleert" : "Teilnehmer: \(names.joined(separator: ", "))"
+            status = names.isEmpty ? L("Teilnehmer geleert", "Participants cleared") : L("Teilnehmer: \(names.joined(separator: ", "))", "Participants: \(names.joined(separator: ", "))")
         }
         CallPopupPanel.shared.hide()
     }
@@ -362,7 +418,7 @@ final class Store: ObservableObject {
     func playClip(_ path: String) {
         player?.stop()
         player = try? AVAudioPlayer(contentsOf: URL(fileURLWithPath: path))
-        if player == nil { status = "Hörprobe nicht mehr verfügbar." }
+        if player == nil { status = L("Hörprobe nicht mehr verfügbar.", "Voice sample no longer available.") }
         player?.play()
     }
 
@@ -385,14 +441,14 @@ final class Store: ObservableObject {
             parts.append("\(s.label)=\(name)")
         }
         let script = scriptDir + "/apply-speakers.sh"
-        guard FileManager.default.fileExists(atPath: script) else { status = "apply-speakers.sh fehlt"; return }
-        status = "Übernehme Zuordnung …"
+        guard FileManager.default.fileExists(atPath: script) else { status = L("apply-speakers.sh fehlt", "apply-speakers.sh missing"); return }
+        status = L("Übernehme Zuordnung …", "Applying names …")
         let mapping = parts.joined(separator: ";")
         DispatchQueue.global().async { [weak self] in
             guard let self else { return }
             let (code, out) = self.run(["/bin/bash", script, p.path, mapping])
             DispatchQueue.main.async {
-                self.status = code == 0 ? "✅ Zuordnung übernommen" : "❌ Zuordnung fehlgeschlagen: \(out.suffix(140))"
+                self.status = code == 0 ? L("✅ Zuordnung übernommen", "✅ Names applied") : L("❌ Zuordnung fehlgeschlagen: \(out.suffix(140))", "❌ Applying names failed: \(out.suffix(140))")
                 self.poll()
             }
         }
@@ -435,8 +491,8 @@ final class Store: ObservableObject {
             .filter { !$0.hasPrefix(".") }
         guard !items.isEmpty else { return }
         let script = scriptDir + "/process-call.sh"
-        guard FileManager.default.fileExists(atPath: script) else { status = "process-call.sh fehlt"; return }
-        status = "Nachverarbeitung von \(items.count) Aufnahme(n) gestartet …"
+        guard FileManager.default.fileExists(atPath: script) else { status = L("process-call.sh fehlt", "process-call.sh missing"); return }
+        status = L("Nachverarbeitung von \(items.count) Aufnahme(n) gestartet …", "Reprocessing \(items.count) recording(s) …")
         let logFile = baseDir + "/log/process.log"
         for it in items {
             let p = Process()
@@ -452,7 +508,7 @@ final class Store: ObservableObject {
         for it in ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []) where !it.hasPrefix(".") {
             try? FileManager.default.removeItem(atPath: dir + "/" + it)
         }
-        status = "Fehlgeschlagene Aufnahmen verworfen."
+        status = L("Fehlgeschlagene Aufnahmen verworfen.", "Failed recordings discarded.")
         refreshNotes()
     }
 
@@ -461,23 +517,23 @@ final class Store: ObservableObject {
     }
 
     func saveAndRestart() {
-        guard persist() else { status = "❌ Config nicht schreibbar"; return }
+        guard persist() else { status = L("❌ Config nicht schreibbar", "❌ Config not writable"); return }
         let (code, out) = run(["/bin/launchctl", "kickstart", "-k", "gui/\(getuid())/at.dasgeht.callwatch"])
         refreshDaemon()
-        status = code == 0 ? "✅ Gespeichert & Daemon neu gestartet" : "⚠️ \(out.trimmingCharacters(in: .whitespacesAndNewlines))"
+        status = code == 0 ? L("✅ Gespeichert & Daemon neu gestartet", "✅ Saved & daemon restarted") : "⚠️ \(out.trimmingCharacters(in: .whitespacesAndNewlines))"
     }
 
     func syncNow() {
-        guard persist() else { status = "❌ Config nicht schreibbar"; return }
-        guard !mirrorDir.isEmpty else { status = "Kein Kopie-Ordner gewählt."; return }
+        guard persist() else { status = L("❌ Config nicht schreibbar", "❌ Config not writable"); return }
+        guard !mirrorDir.isEmpty else { status = L("Kein Kopie-Ordner gewählt.", "No mirror folder selected."); return }
         let script = scriptDir + "/callnotes-sync.sh"
-        guard FileManager.default.fileExists(atPath: script) else { status = "❌ Sync-Skript fehlt"; return }
-        status = "Kopiere …"
+        guard FileManager.default.fileExists(atPath: script) else { status = L("❌ Sync-Skript fehlt", "❌ Sync script missing"); return }
+        status = L("Kopiere …", "Copying …")
         DispatchQueue.global().async { [weak self] in
             guard let self else { return }
             let (code, out) = self.run(["/bin/bash", script])
             DispatchQueue.main.async {
-                self.status = code == 0 ? "✅ Kopiert nach \(tilde(self.mirrorDir))" : "❌ Kopieren fehlgeschlagen: \(out.suffix(140))"
+                self.status = code == 0 ? L("✅ Kopiert nach \(tilde(self.mirrorDir))", "✅ Copied to \(tilde(self.mirrorDir))") : L("❌ Kopieren fehlgeschlagen: \(out.suffix(140))", "❌ Copy failed: \(out.suffix(140))")
             }
         }
     }
@@ -530,7 +586,7 @@ struct InfoTip: View {
         }
         .buttonStyle(.plain)
         .help(title)
-        .accessibilityLabel("Erklärung: \(title)")
+        .accessibilityLabel(L("Erklärung: \(title)", "Explanation: \(title)"))
         .popover(isPresented: $show, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title).font(.callout.weight(.semibold))
@@ -555,7 +611,7 @@ final class HelpWindow {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 620),
                          styleMask: [.titled, .closable, .resizable],
                          backing: .buffered, defer: false)
-        w.title = "CallNotes — Hilfe"
+        w.title = L("CallNotes — Hilfe", "CallNotes — Help")
         w.contentView = view
         w.center()
         w.isReleasedWhenClosed = false
@@ -597,64 +653,64 @@ struct HelpView: View {
                             .font(.system(size: 18, weight: .semibold)).foregroundColor(.white)
                     }
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("CallNotes Hilfe").font(.title3.weight(.bold))
-                        Text("Alles Wichtige zum Einstellen und Nutzen").font(.caption).foregroundColor(.secondary)
+                        Text(L("CallNotes Hilfe", "CallNotes help")).font(.title3.weight(.bold))
+                        Text(L("Alles Wichtige zum Einstellen und Nutzen", "Everything you need for setup and use")).font(.caption).foregroundColor(.secondary)
                     }
                 }
 
                 Group {
-                    Text("SO FUNKTIONIERT ES").font(.caption2.weight(.bold)).foregroundColor(.secondary)
-                    HelpTopic(icon: "waveform.badge.mic", title: "Automatische Aufnahme",
-                              body_: "Sobald eine Telefonie-App (FaceTime, iPhone-Anruf, WhatsApp, Zoom, Teams, Signal, Telegram, Discord) dein Mikrofon nutzt, startet die Aufnahme — zwei getrennte Spuren: dein Mikro und der Ton der Gegenseite. Nach dem Auflegen stoppt sie von selbst; Anrufe unter 20 Sekunden werden verworfen.")
-                    HelpTopic(icon: "doc.text", title: "Die fertige Notiz",
-                              body_: "Etwa eine Minute nach dem Auflegen liegt die Notiz im Notizen-Ordner: KI-Kurzfassung, besprochene Punkte, Zusagen & To-dos und das komplette Dialog-Transkript mit Sprechern. Dazu ein Audio-Archiv als m4a (links du, rechts Gegenseite).")
-                    HelpTopic(icon: "person.2.wave.2", title: "Konferenzen & Sprecher-Zuordnung",
-                              body_: "Bei mehreren Stimmen auf der Gegenseite trennt die lokale Sprecher-Erkennung sie in „Sprecher 1..N\u{201C}. Im Menüleisten-Panel erscheint dann „Stimmen erkannt\u{201C}: Hörprobe abspielen ▶︎, Namen im Dropdown wählen (die KI schlägt Namen vor, die im Gespräch fielen), „Zuordnung übernehmen\u{201C} — fertig. Tipp: Trage die Teilnehmer schon während des Anrufs im Popup ein, dann stehen die Namen im Dropdown bereit.")
+                    Text(L("SO FUNKTIONIERT ES", "HOW IT WORKS")).font(.caption2.weight(.bold)).foregroundColor(.secondary)
+                    HelpTopic(icon: "waveform.badge.mic", title: L("Automatische Aufnahme", "Automatic recording"),
+                              body_: L("Sobald eine Telefonie-App (FaceTime, iPhone-Anruf, WhatsApp, Zoom, Teams, Signal, Telegram, Discord) dein Mikrofon nutzt, startet die Aufnahme — zwei getrennte Spuren: dein Mikro und der Ton der Gegenseite. Nach dem Auflegen stoppt sie von selbst; Anrufe unter 20 Sekunden werden verworfen.", "As soon as a calling app (FaceTime, iPhone calls, WhatsApp, Zoom, Teams, Signal, Telegram, Discord) uses your microphone, recording starts — two separate tracks: your mic and the caller's audio. It stops automatically when you hang up; calls under 20 seconds are discarded."))
+                    HelpTopic(icon: "doc.text", title: L("Die fertige Notiz", "The finished note"),
+                              body_: L("Etwa eine Minute nach dem Auflegen liegt die Notiz im Notizen-Ordner: KI-Kurzfassung, besprochene Punkte, Zusagen & To-dos und das komplette Dialog-Transkript mit Sprechern. Dazu ein Audio-Archiv als m4a (links du, rechts Gegenseite).", "About a minute after hanging up, the note appears in your notes folder: an AI summary, discussion points, commitments & to-dos, and the full dialogue transcript with speakers. Plus an m4a audio archive (you on the left, caller on the right)."))
+                    HelpTopic(icon: "person.2.wave.2", title: L("Konferenzen & Sprecher-Zuordnung", "Conference calls & speaker assignment"),
+                              body_: L("Bei mehreren Stimmen auf der Gegenseite trennt die lokale Sprecher-Erkennung sie in „Sprecher 1..N\u{201C}. Im Menüleisten-Panel erscheint dann „Stimmen erkannt\u{201C}: Hörprobe abspielen ▶︎, Namen im Dropdown wählen (die KI schlägt Namen vor, die im Gespräch fielen), „Zuordnung übernehmen\u{201C} — fertig. Tipp: Trage die Teilnehmer schon während des Anrufs im Popup ein, dann stehen die Namen im Dropdown bereit.", "When there are multiple voices on the other end, local speaker recognition separates them into \u{201C}Speaker 1..N\u{201D}. The menu bar panel then shows \u{201C}Voices detected\u{201D}: play a voice sample ▶︎, pick a name from the dropdown (the AI suggests names mentioned during the call), \u{201C}Apply names\u{201D} — done. Tip: enter participants in the popup during the call so the names are ready in the dropdown."))
                 }
 
                 Group {
-                    Text("FREIGABEN (EINMALIG)").font(.caption2.weight(.bold)).foregroundColor(.secondary)
-                    HelpTopic(icon: "lock.shield", title: "Mikrofon + Systemaudio",
-                              body_: "Beide Freigaben hängen an „calltap\u{201C} (dem Aufnahme-Helfer). macOS fragt beim ersten Start automatisch. Falls die Gegenseite in Aufnahmen stumm ist: Systemeinstellungen → Datenschutz & Sicherheit → **Bildschirm- & Systemaudioaufnahme** → calltap aktivieren. Fürs Mikrofon: gleicher Ort → **Mikrofon**.")
-                    HelpTopic(icon: "externaldrive", title: "Externe Festplatte",
-                              body_: "Beim ersten Kopieren auf eine externe Platte fragt macOS nach der Freigabe für „Dateien auf Wechseldatenträgern\u{201C} — einmal erlauben, fertig.")
-                    HelpTopic(icon: "note.text", title: "Apple Notes / Automation",
-                              body_: "Wenn die Ablage in Apple Notes aktiv ist, fragt macOS beim ersten Anruf nach einer Automation-Freigabe (calltap → Notes) — erlauben.")
+                    Text(L("FREIGABEN (EINMALIG)", "PERMISSIONS (ONE-TIME)")).font(.caption2.weight(.bold)).foregroundColor(.secondary)
+                    HelpTopic(icon: "lock.shield", title: L("Mikrofon + Systemaudio", "Microphone + system audio"),
+                              body_: L("Beide Freigaben hängen an „calltap\u{201C} (dem Aufnahme-Helfer). macOS fragt beim ersten Start automatisch. Falls die Gegenseite in Aufnahmen stumm ist: Systemeinstellungen → Datenschutz & Sicherheit → **Bildschirm- & Systemaudioaufnahme** → calltap aktivieren. Fürs Mikrofon: gleicher Ort → **Mikrofon**.", "Both permissions belong to \u{201C}calltap\u{201D} (the recording helper). macOS asks automatically on first launch. If the caller is silent in recordings: System Settings → Privacy & Security → **Screen & System Audio Recording** → enable calltap. For the microphone: same place → **Microphone**."))
+                    HelpTopic(icon: "externaldrive", title: L("Externe Festplatte", "External drive"),
+                              body_: L("Beim ersten Kopieren auf eine externe Platte fragt macOS nach der Freigabe für „Dateien auf Wechseldatenträgern\u{201C} — einmal erlauben, fertig.", "The first time it copies to an external drive, macOS asks for \u{201C}Removable Volumes\u{201D} access — allow it once, done."))
+                    HelpTopic(icon: "note.text", title: L("Apple Notes / Automation", "Apple Notes / Automation"),
+                              body_: L("Wenn die Ablage in Apple Notes aktiv ist, fragt macOS beim ersten Anruf nach einer Automation-Freigabe (calltap → Notes) — erlauben.", "If saving to Apple Notes is enabled, macOS asks for an Automation permission on the first call (calltap → Notes) — allow it."))
                 }
 
                 Group {
-                    Text("EINSTELLUNGEN ERKLÄRT").font(.caption2.weight(.bold)).foregroundColor(.secondary)
-                    HelpTopic(icon: "folder", title: "Speicherorte",
-                              body_: "**Notizen**: Zielordner der fertigen .md-Notizen — ideal ist dein Obsidian-Vault. **Audio-Archiv**: die m4a-Dateien. **Kopie (extern)**: optionaler Spiegel z. B. auf der externen Platte; wird nach jedem Anruf synchronisiert, verpasste Syncs werden automatisch nachgeholt.")
-                    HelpTopic(icon: "cpu", title: "Transkription: Lokal oder Groq",
-                              body_: "**Lokal** läuft komplett offline auf deinem Mac (privat, kostenlos). **Groq** ist eine Cloud-API und bei langen Gesprächen deutlich schneller — dafür verlässt das Audio deinen Mac. API-Key gratis auf console.groq.com erstellen; er wird nur lokal gespeichert.")
-                    HelpTopic(icon: "brain", title: "KI-Zusammenfassung: deine Wahl",
-                              body_: "**Claude Code** (Standard) nutzt dein bestehendes Claude-Abo auf dem Mac. **Eigene KI** spricht jede OpenAI-kompatible API — OpenAI, Groq, OpenRouter oder komplett lokal & kostenlos via Ollama (dann bleibt wirklich alles auf deinem Mac). **Aus** liefert die Notiz nur mit Transkript. Ohne funktionierende KI bricht nichts: Die Notiz kommt trotzdem.")
-                    HelpTopic(icon: "list.bullet.rectangle", title: "Notiz-Inhalte",
-                              body_: "Wähle, welche Abschnitte die KI schreibt: Kurzfassung, besprochene Punkte, Zusagen & To-dos, und auf Wunsch einen fertigen **Follow-up-Mail-Entwurf** an die Gegenseite.")
-                    HelpTopic(icon: "square.and.arrow.up", title: "Ablage-Ziele",
-                              body_: "Zusätzlich zur Notiz im Ordner: **Apple Notes** (Ordner „CallNotes\u{201C}), **Nextcloud** (WebDAV; App-Passwort in Nextcloud unter Einstellungen → Sicherheit erzeugen) und **Notion** (Integration auf notion.so/my-integrations anlegen, Token eintragen, Ziel-Seite über ••• → Verbindungen freigeben; Seiten-ID = die 32 Zeichen aus der Seiten-URL).")
-                    HelpTopic(icon: "bell.badge", title: "Push (ntfy)",
-                              body_: "Kostenlose Push-Nachricht aufs Handy nach jeder Notiz: ntfy.sh-App installieren, ein Thema abonnieren und die URL (https://ntfy.sh/dein-thema) eintragen.")
+                    Text(L("EINSTELLUNGEN ERKLÄRT", "SETTINGS EXPLAINED")).font(.caption2.weight(.bold)).foregroundColor(.secondary)
+                    HelpTopic(icon: "folder", title: L("Speicherorte", "Storage locations"),
+                              body_: L("**Notizen**: Zielordner der fertigen .md-Notizen — ideal ist dein Obsidian-Vault. **Audio-Archiv**: die m4a-Dateien. **Kopie (extern)**: optionaler Spiegel z. B. auf der externen Platte; wird nach jedem Anruf synchronisiert, verpasste Syncs werden automatisch nachgeholt.", "**Notes**: destination folder for the finished .md notes — your Obsidian vault is ideal. **Audio archive**: the m4a files. **Mirror (external)**: an optional copy, e.g. on an external drive; synced after every call, and missed syncs are caught up automatically."))
+                    HelpTopic(icon: "cpu", title: L("Transkription: Lokal oder Groq", "Transcription: local or Groq"),
+                              body_: L("**Lokal** läuft komplett offline auf deinem Mac (privat, kostenlos). **Groq** ist eine Cloud-API und bei langen Gesprächen deutlich schneller — dafür verlässt das Audio deinen Mac. API-Key gratis auf console.groq.com erstellen; er wird nur lokal gespeichert.", "**Local** runs entirely offline on your Mac (private, free). **Groq** is a cloud API and noticeably faster for long calls — but the audio leaves your Mac. Get a free API key at console.groq.com; it's stored locally only."))
+                    HelpTopic(icon: "brain", title: L("KI-Zusammenfassung: deine Wahl", "AI summary: your choice"),
+                              body_: L("**Claude Code** (Standard) nutzt dein bestehendes Claude-Abo auf dem Mac. **Eigene KI** spricht jede OpenAI-kompatible API — OpenAI, Groq, OpenRouter oder komplett lokal & kostenlos via Ollama (dann bleibt wirklich alles auf deinem Mac). **Aus** liefert die Notiz nur mit Transkript. Ohne funktionierende KI bricht nichts: Die Notiz kommt trotzdem.", "**Claude Code** (default) uses your existing Claude subscription on the Mac. **Custom AI** talks to any OpenAI-compatible API — OpenAI, Groq, OpenRouter, or fully local & free via Ollama (then everything really does stay on your Mac). **Off** delivers the note with just the transcript. Nothing breaks without a working AI: the note still arrives."))
+                    HelpTopic(icon: "list.bullet.rectangle", title: L("Notiz-Inhalte", "Note contents"),
+                              body_: L("Wähle, welche Abschnitte die KI schreibt: Kurzfassung, besprochene Punkte, Zusagen & To-dos, und auf Wunsch einen fertigen **Follow-up-Mail-Entwurf** an die Gegenseite.", "Choose which sections the AI writes: summary, discussion points, commitments & to-dos, and optionally a ready-to-send **follow-up email draft** to the caller."))
+                    HelpTopic(icon: "square.and.arrow.up", title: L("Ablage-Ziele", "Save destinations"),
+                              body_: L("Zusätzlich zur Notiz im Ordner: **Apple Notes** (Ordner „CallNotes\u{201C}), **Nextcloud** (WebDAV; App-Passwort in Nextcloud unter Einstellungen → Sicherheit erzeugen) und **Notion** (Integration auf notion.so/my-integrations anlegen, Token eintragen, Ziel-Seite über ••• → Verbindungen freigeben; Seiten-ID = die 32 Zeichen aus der Seiten-URL).", "In addition to the note in the folder: **Apple Notes** (\u{201C}CallNotes\u{201D} folder), **Nextcloud** (WebDAV; create an app password in Nextcloud under Settings → Security) and **Notion** (create an integration at notion.so/my-integrations, paste the token, share the target page via ••• → Connections; page ID = the 32 characters from the page URL)."))
+                    HelpTopic(icon: "bell.badge", title: L("Push (ntfy)", "Push (ntfy)"),
+                              body_: L("Kostenlose Push-Nachricht aufs Handy nach jeder Notiz: ntfy.sh-App installieren, ein Thema abonnieren und die URL (https://ntfy.sh/dein-thema) eintragen.", "Free push notification to your phone after every note: install the ntfy.sh app, subscribe to a topic, and enter the URL (https://ntfy.sh/your-topic)."))
                 }
 
                 Group {
-                    Text("WENN ETWAS HAKT").font(.caption2.weight(.bold)).foregroundColor(.secondary)
-                    HelpTopic(icon: "questionmark.circle", title: "Aufnahme startet nicht",
-                              body_: "Öffne das Protokoll unter `~/CallNotes/log/callwatch.log`. Steht dort ein Hinweis auf eine „nicht gelistete App\u{201C}, ist deine Telefonie-App noch nicht in der Liste bekannter Apps hinterlegt — das lässt sich in der Konfigurationsdatei nachtragen.")
-                    HelpTopic(icon: "speaker.slash", title: "Gegenseite ist stumm",
-                              body_: "Fast immer die fehlende Systemaudio-Freigabe (siehe oben) — macOS liefert dann Stille statt eines Fehlers. Bei WhatsApp/Discord/Teams hilft manchmal eine Anpassung in der Konfigurationsdatei.")
-                    HelpTopic(icon: "arrow.clockwise", title: "Anruf verpasst?",
-                              body_: "Verarbeitungen, die nicht geklappt haben, landen mit dem Roh-Audio im Ordner `~/CallNotes/failed/` und lassen sich von dort erneut anstoßen.")
-                    HelpTopic(icon: "checkmark.seal", title: "Recht",
-                              body_: "Informiere die Gegenseite über die Aufnahme. Die Rechtslage unterscheidet sich je Land — du bist für die rechtmäßige Nutzung verantwortlich.")
+                    Text(L("WENN ETWAS HAKT", "TROUBLESHOOTING")).font(.caption2.weight(.bold)).foregroundColor(.secondary)
+                    HelpTopic(icon: "questionmark.circle", title: L("Aufnahme startet nicht", "Recording doesn't start"),
+                              body_: L("Öffne das Protokoll unter `~/CallNotes/log/callwatch.log`. Steht dort ein Hinweis auf eine „nicht gelistete App\u{201C}, ist deine Telefonie-App noch nicht in der Liste bekannter Apps hinterlegt — das lässt sich in der Konfigurationsdatei nachtragen.", "Open the log at `~/CallNotes/log/callwatch.log`. If it mentions an \u{201C}unlisted app\u{201D}, your calling app isn't yet in the list of known apps — this can be added in the config file."))
+                    HelpTopic(icon: "speaker.slash", title: L("Gegenseite ist stumm", "Caller is silent"),
+                              body_: L("Fast immer die fehlende Systemaudio-Freigabe (siehe oben) — macOS liefert dann Stille statt eines Fehlers. Bei WhatsApp/Discord/Teams hilft manchmal eine Anpassung in der Konfigurationsdatei.", "Almost always the missing system audio permission (see above) — macOS delivers silence instead of an error. For WhatsApp/Discord/Teams, a config file tweak sometimes helps."))
+                    HelpTopic(icon: "arrow.clockwise", title: L("Anruf verpasst?", "Missed a call?"),
+                              body_: L("Verarbeitungen, die nicht geklappt haben, landen mit dem Roh-Audio im Ordner `~/CallNotes/failed/` und lassen sich von dort erneut anstoßen.", "Processing runs that failed land with the raw audio in `~/CallNotes/failed/` and can be retried from there."))
+                    HelpTopic(icon: "checkmark.seal", title: L("Recht", "Legal"),
+                              body_: L("Informiere die Gegenseite über die Aufnahme. Die Rechtslage unterscheidet sich je Land — du bist für die rechtmäßige Nutzung verantwortlich.", "Inform the other party about the recording. Laws vary by country — you are responsible for lawful use."))
                 }
 
                 HStack {
-                    Button("Ersteinrichtung erneut starten") { SetupWizard.shared.show(store: store) }
+                    Button(L("Ersteinrichtung erneut starten", "Restart initial setup")) { SetupWizard.shared.show(store: store) }
                         .controlSize(.small)
                     Spacer()
-                    Link("GitHub & Doku", destination: URL(string: "https://github.com/michaelczesun/callnotes")!)
+                    Link(L("GitHub & Doku", "GitHub & docs"), destination: URL(string: "https://github.com/michaelczesun/callnotes")!)
                         .font(.caption)
                 }
                 .padding(.top, 4)
@@ -680,7 +736,7 @@ final class SetupWizard {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
                          styleMask: [.titled, .closable],
                          backing: .buffered, defer: false)
-        w.title = "CallNotes einrichten"
+        w.title = L("CallNotes einrichten", "Set up CallNotes")
         w.contentView = view
         w.center()
         w.isReleasedWhenClosed = false
@@ -719,85 +775,85 @@ struct WizardView: View {
         VStack(alignment: .leading, spacing: 14) {
             switch step {
             case 0:
-                WizardStepHeader(step: 0, total: total, title: "Willkommen bei CallNotes")
+                WizardStepHeader(step: 0, total: total, title: L("Willkommen bei CallNotes", "Welcome to CallNotes"))
                 HStack(spacing: 12) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 14).fill(accent).frame(width: 64, height: 64)
                         Image(systemName: safeSymbol(["phone.and.waveform.fill", "phone.fill"]))
                             .font(.system(size: 28, weight: .semibold)).foregroundColor(.white)
                     }
-                    Text("Du telefonierst — CallNotes macht den Rest.")
+                    Text(L("Du telefonierst — CallNotes macht den Rest.", "You take the call — CallNotes handles the rest."))
                         .font(.callout.weight(.medium))
                 }
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Erkennt Anrufe automatisch und nimmt beide Seiten getrennt auf", systemImage: "waveform.badge.mic")
-                    Label("Transkribiert lokal auf deinem Mac und fasst per KI zusammen", systemImage: "cpu")
-                    Label("Legt die fertige Notiz ab, wo du willst — auch externe Platte, Notes, Notion", systemImage: "square.and.arrow.down")
+                    Label(L("Erkennt Anrufe automatisch und nimmt beide Seiten getrennt auf", "Detects calls automatically and records both sides separately"), systemImage: "waveform.badge.mic")
+                    Label(L("Transkribiert lokal auf deinem Mac und fasst per KI zusammen", "Transcribes locally on your Mac and summarizes with AI"), systemImage: "cpu")
+                    Label(L("Legt die fertige Notiz ab, wo du willst — auch externe Platte, Notes, Notion", "Saves the finished note wherever you like — external drive, Notes, Notion too"), systemImage: "square.and.arrow.down")
                 }
                 .font(.caption)
                 .foregroundColor(.secondary)
             case 1:
-                WizardStepHeader(step: 1, total: total, title: "Freigaben")
-                Text("Die Aufnahme übernimmt der Helfer **calltap**. macOS fragt beim ersten Anruf automatisch nach zwei Freigaben — bitte beide erlauben:")
+                WizardStepHeader(step: 1, total: total, title: L("Freigaben", "Permissions"))
+                Text(L("Die Aufnahme übernimmt der Helfer **calltap**. macOS fragt beim ersten Anruf automatisch nach zwei Freigaben — bitte beide erlauben:", "The **calltap** helper handles recording. macOS automatically asks for two permissions on the first call — please allow both:"))
                     .font(.caption).foregroundColor(.secondary)
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Mikrofon — deine Stimme", systemImage: "mic.fill")
-                    Label("Systemaudio-Aufnahme — die Stimme der Gegenseite", systemImage: "speaker.wave.2.fill")
+                    Label(L("Mikrofon — deine Stimme", "Microphone — your voice"), systemImage: "mic.fill")
+                    Label(L("Systemaudio-Aufnahme — die Stimme der Gegenseite", "System audio recording — the caller's voice"), systemImage: "speaker.wave.2.fill")
                 }
                 .font(.caption)
-                Text("Kam kein Dialog oder ist die Gegenseite später stumm, findest du beides hier:")
+                Text(L("Kam kein Dialog oder ist die Gegenseite später stumm, findest du beides hier:", "If there's no dialogue or the caller is silent later, find both settings here:"))
                     .font(.caption).foregroundColor(.secondary)
                 HStack {
-                    Button("Mikrofon-Einstellungen öffnen") {
+                    Button(L("Mikrofon-Einstellungen öffnen", "Open microphone settings")) {
                         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
                     }.controlSize(.small)
-                    Button("Systemaudio-Einstellungen öffnen") {
+                    Button(L("Systemaudio-Einstellungen öffnen", "Open system audio settings")) {
                         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
                     }.controlSize(.small)
                 }
             case 2:
-                WizardStepHeader(step: 2, total: total, title: "Speicherorte")
-                Text("Wohin sollen Notizen und Audio? (Später jederzeit änderbar — Kopie ist z. B. deine externe Festplatte.)")
+                WizardStepHeader(step: 2, total: total, title: L("Speicherorte", "Storage locations"))
+                Text(L("Wohin sollen Notizen und Audio? (Später jederzeit änderbar — Kopie ist z. B. deine externe Festplatte.)", "Where should notes and audio go? (Changeable anytime later — the mirror is e.g. your external drive.)"))
                     .font(.caption).foregroundColor(.secondary)
-                PathRow(label: "Notizen", path: $store.notesDir,
-                        info: "Zielordner der fertigen Markdown-Notizen. Ideal: dein Obsidian-Vault — dann sind Anrufe sofort verlinkbar.")
-                PathRow(label: "Audio-Archiv", path: $store.audioDir,
-                        info: "Je Anruf eine m4a-Datei: links dein Mikro, rechts die Gegenseite.")
-                PathRow(label: "Kopie (extern)", path: $store.mirrorDir, clearable: true,
-                        info: "Optionaler Spiegel-Ordner, z. B. auf der externen Platte. Wird nach jedem Anruf synchronisiert; ist die Platte nicht angeschlossen, wird später automatisch nachgeholt.")
+                PathRow(label: L("Notizen", "Notes"), path: $store.notesDir,
+                        info: L("Zielordner der fertigen Markdown-Notizen. Ideal: dein Obsidian-Vault — dann sind Anrufe sofort verlinkbar.", "Destination folder for the finished markdown notes. Ideal: your Obsidian vault — then calls are instantly linkable."))
+                PathRow(label: L("Audio-Archiv", "Audio archive"), path: $store.audioDir,
+                        info: L("Je Anruf eine m4a-Datei: links dein Mikro, rechts die Gegenseite.", "One m4a file per call: your mic on the left, the caller on the right."))
+                PathRow(label: L("Kopie (extern)", "Mirror (external)"), path: $store.mirrorDir, clearable: true,
+                        info: L("Optionaler Spiegel-Ordner, z. B. auf der externen Platte. Wird nach jedem Anruf synchronisiert; ist die Platte nicht angeschlossen, wird später automatisch nachgeholt.", "Optional mirror folder, e.g. on an external drive. Synced after every call; if the drive isn't connected, it's caught up automatically later."))
             case 3:
-                WizardStepHeader(step: 3, total: total, title: "Transkription & KI")
-                Text("Wo soll transkribiert werden?").font(.caption).foregroundColor(.secondary)
+                WizardStepHeader(step: 3, total: total, title: L("Transkription & KI", "Transcription & AI"))
+                Text(L("Wo soll transkribiert werden?", "Where should transcription happen?")).font(.caption).foregroundColor(.secondary)
                 Picker("", selection: $store.transcriber) {
-                    Text("Lokal — offline & privat").tag("local")
-                    Text("Groq API — schneller").tag("groq")
+                    Text(L("Lokal — offline & privat", "Local — offline & private")).tag("local")
+                    Text(L("Groq API — schneller", "Groq API — faster")).tag("groq")
                 }
                 .pickerStyle(.segmented).labelsHidden()
                 if store.transcriber == "groq" {
-                    SecureField("Groq API-Key (console.groq.com)", text: $store.groqApiKey)
+                    SecureField(L("Groq API-Key (console.groq.com)", "Groq API key (console.groq.com)"), text: $store.groqApiKey)
                         .textFieldStyle(.roundedBorder).font(.caption)
                 }
-                Text("Was soll in der Notiz stehen?").font(.caption).foregroundColor(.secondary).padding(.top, 4)
+                Text(L("Was soll in der Notiz stehen?", "What should the note contain?")).font(.caption).foregroundColor(.secondary).padding(.top, 4)
                 HStack {
-                    wToggle("Kurzfassung", "kurzfassung")
-                    wToggle("Besprochen", "besprochen")
+                    wToggle(L("Kurzfassung", "Summary"), "kurzfassung")
+                    wToggle(L("Besprochen", "Discussed"), "besprochen")
                 }
                 HStack {
-                    wToggle("To-dos", "todos")
-                    wToggle("Follow-up-Mail", "followup")
+                    wToggle(L("To-dos", "To-dos"), "todos")
+                    wToggle(L("Follow-up-Mail", "Follow-up email"), "followup")
                 }
             default:
-                WizardStepHeader(step: 4, total: total, title: "Fertig!")
+                WizardStepHeader(step: 4, total: total, title: L("Fertig!", "All set!"))
                 HStack(spacing: 6) {
                     Circle().fill(store.daemonRunning ? Color.green : Color.orange).frame(width: 9, height: 9)
-                    Text(store.daemonRunning ? "Der Anruf-Autopilot läuft." : "Autopilot wird beim Abschluss gestartet.")
+                    Text(store.daemonRunning ? L("Der Anruf-Autopilot läuft.", "The call autopilot is running.") : L("Autopilot wird beim Abschluss gestartet.", "The autopilot starts once you finish."))
                         .font(.callout.weight(.medium))
                 }
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Mach jetzt einen **Testanruf** (länger als 20 Sekunden)", systemImage: "phone.arrow.up.right")
-                    Label("Beim ersten Mal die macOS-Freigaben erlauben", systemImage: "lock.open")
-                    Label("~1 Minute nach dem Auflegen liegt die Notiz im Notizen-Ordner", systemImage: "doc.text")
-                    Label("Alles Weitere: ? in der Menüleiste → Hilfe", systemImage: "questionmark.circle")
+                    Label(L("Mach jetzt einen **Testanruf** (länger als 20 Sekunden)", "Make a **test call** now (longer than 20 seconds)"), systemImage: "phone.arrow.up.right")
+                    Label(L("Beim ersten Mal die macOS-Freigaben erlauben", "Allow the macOS permissions the first time"), systemImage: "lock.open")
+                    Label(L("~1 Minute nach dem Auflegen liegt die Notiz im Notizen-Ordner", "~1 minute after hanging up, the note appears in the notes folder"), systemImage: "doc.text")
+                    Label(L("Alles Weitere: ? in der Menüleiste → Hilfe", "For everything else: ? in the menu bar → Help"), systemImage: "questionmark.circle")
                 }
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -806,15 +862,15 @@ struct WizardView: View {
             Spacer()
             HStack {
                 if step > 0 {
-                    Button("Zurück") { step -= 1 }.controlSize(.small)
+                    Button(L("Zurück", "Back")) { step -= 1 }.controlSize(.small)
                 }
                 Spacer()
                 if step < total - 1 {
-                    Button("Weiter") { step += 1 }
+                    Button(L("Weiter", "Next")) { step += 1 }
                         .buttonStyle(.borderedProminent).tint(.indigo)
                         .keyboardShortcut(.defaultAction)
                 } else {
-                    Button("Einrichtung abschließen") {
+                    Button(L("Einrichtung abschließen", "Finish setup")) {
                         store.setupDone = true
                         store.saveAndRestart()
                         close()
@@ -888,8 +944,8 @@ struct WaveRow: View {
             .frame(maxWidth: .infinity, alignment: .trailing)
             .animation(.linear(duration: 0.3), value: levels)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(label) Lautstärke")
-            .accessibilityValue(levels.last.map { Int($0 * 100).description + " Prozent" } ?? "still")
+            .accessibilityLabel(L("\(label) Lautstärke", "\(label) volume"))
+            .accessibilityValue(levels.last.map { Int($0 * 100).description + L(" Prozent", " percent") } ?? L("still", "silent"))
         }
     }
 }
@@ -903,7 +959,7 @@ struct ParticipantFieldsView: View {
             ForEach(store.participantFields.indices, id: \.self) { i in
                 HStack {
                     Image(systemName: "person.crop.circle").foregroundColor(.secondary)
-                    TextField("Name Teilnehmer \(i + 1)", text: Binding(
+                    TextField(L("Name Teilnehmer \(i + 1)", "Participant \(i + 1) name"), text: Binding(
                         get: { i < store.participantFields.count ? store.participantFields[i] : "" },
                         set: { if i < store.participantFields.count { store.participantFields[i] = $0 } }
                     ))
@@ -919,27 +975,27 @@ struct ParticipantFieldsView: View {
             }
             HStack {
                 Button { store.participantFields.append("") } label: {
-                    Label("weiterer Teilnehmer", systemImage: "plus.circle.fill")
+                    Label(L("weiterer Teilnehmer", "add participant"), systemImage: "plus.circle.fill")
                 }
                 .buttonStyle(.plain).font(.caption).foregroundColor(.secondary)
-                InfoTip(title: "Teilnehmer",
-                        text: "Wer ist im Gespräch? Die Namen helfen der KI bei der Zusammenfassung und stehen nach Konferenzen im Zuordnungs-Dropdown bereit. Optional — geht auch ohne.")
+                InfoTip(title: L("Teilnehmer", "Participants"),
+                        text: L("Wer ist im Gespräch? Die Namen helfen der KI bei der Zusammenfassung und stehen nach Konferenzen im Zuordnungs-Dropdown bereit. Optional — geht auch ohne.", "Who's in the call? The names help the AI with the summary and are ready in the assignment dropdown after conference calls. Optional — works without it too."))
                 Spacer()
-                Button(store.participantsSaved ? "Gespeichert ✓" : "Speichern") { store.saveParticipants() }
+                Button(store.participantsSaved ? L("Gespeichert ✓", "Saved ✓") : L("Speichern", "Save")) { store.saveParticipants() }
                     .buttonStyle(.borderedProminent).tint(.indigo).controlSize(.small)
                     .keyboardShortcut(.defaultAction)
             }
             Divider()
             HStack(spacing: 4) {
                 Button { store.abortRecording() } label: {
-                    Label("Diesen Anruf nicht aufnehmen", systemImage: "mic.slash.fill")
+                    Label(L("Diesen Anruf nicht aufnehmen", "Don't record this call"), systemImage: "mic.slash.fill")
                         .font(.caption)
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(.red)
                 .hoverHighlight()
-                InfoTip(title: "Nicht aufnehmen",
-                        text: "Verwirft die laufende Aufnahme sofort und unwiderruflich — es wird nichts gespeichert oder verarbeitet. Für diesen Anruf startet die Aufnahme auch nicht neu; ab dem nächsten Anruf ist der Autopilot wieder aktiv.")
+                InfoTip(title: L("Nicht aufnehmen", "Don't record"),
+                        text: L("Verwirft die laufende Aufnahme sofort und unwiderruflich — es wird nichts gespeichert oder verarbeitet. Für diesen Anruf startet die Aufnahme auch nicht neu; ab dem nächsten Anruf ist der Autopilot wieder aktiv.", "Discards the current recording immediately and irreversibly — nothing is saved or processed. Recording won't restart for this call either; the autopilot is active again from the next call on."))
                 Spacer()
             }
         }
@@ -959,8 +1015,8 @@ struct CallPopupView: View {
                         .font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Anruf erkannt").fontWeight(.semibold)
-                    Text("via \(store.currentCall?.appName ?? "?") — wer ist dran?")
+                    Text(L("Anruf erkannt", "Call detected")).fontWeight(.semibold)
+                    Text(L("via \(store.currentCall?.appName ?? "?") — wer ist dran?", "via \(store.currentCall?.appName ?? "?") — who's on the line?"))
                         .font(.caption).foregroundColor(.secondary)
                 }
             }
@@ -980,10 +1036,10 @@ struct PendingView: View {
         Card {
             HStack {
                 Image(systemName: "person.2.wave.2.fill").foregroundColor(.indigo)
-                Text("\(p.speakers.count) Stimmen · \(p.app) · \(p.stamp)")
+                Text(L("\(p.speakers.count) Stimmen · \(p.app) · \(p.stamp)", "\(p.speakers.count) voices · \(p.app) · \(p.stamp)"))
                     .font(.caption).foregroundColor(.secondary)
-                InfoTip(title: "Stimmen zuordnen",
-                        text: "Auf der Gegenseite wurden mehrere Stimmen erkannt. ▶︎ spielt eine Hörprobe der jeweiligen Person; wähle dann den Namen im Dropdown (Vorschläge kommen aus dem Gespräch). „Zuordnung übernehmen\u{201C} schreibt die Namen ins Transkript der Notiz.")
+                InfoTip(title: L("Stimmen zuordnen", "Assign voices"),
+                        text: L("Auf der Gegenseite wurden mehrere Stimmen erkannt. ▶︎ spielt eine Hörprobe der jeweiligen Person; wähle dann den Namen im Dropdown (Vorschläge kommen aus dem Gespräch). „Zuordnung übernehmen\u{201C} schreibt die Namen ins Transkript der Notiz.", "Multiple voices were detected on the other end. ▶︎ plays a voice sample for that person; then pick the name from the dropdown (suggestions come from the conversation). \u{201C}Apply names\u{201D} writes the names into the note's transcript."))
                 Spacer()
             }
             ForEach(p.speakers) { s in
@@ -993,7 +1049,7 @@ struct PendingView: View {
                         Image(systemName: "play.circle.fill").font(.title2).foregroundColor(.indigo)
                     }
                     .buttonStyle(.plain)
-                    .help("Hörprobe \(s.label) (\(Int(s.totalSec))s Redezeit)")
+                    .help(L("Hörprobe \(s.label) (\(Int(s.totalSec))s Redezeit)", "Voice sample \(s.label) (\(Int(s.totalSec))s talk time)"))
                     Text(s.label).font(.callout).frame(width: 74, alignment: .leading)
                     Picker("", selection: Binding(
                         get: { store.picks[k] ?? kKeep },
@@ -1004,7 +1060,7 @@ struct PendingView: View {
                     .labelsHidden()
                 }
                 if store.picks[k] == kCustom {
-                    TextField("Name eingeben", text: Binding(
+                    TextField(L("Name eingeben", "Enter name"), text: Binding(
                         get: { store.customNames[k] ?? "" },
                         set: { store.customNames[k] = $0 }
                     ))
@@ -1013,19 +1069,19 @@ struct PendingView: View {
                 }
             }
             HStack {
-                Button("Notiz ansehen") { NSWorkspace.shared.open(URL(fileURLWithPath: p.note)) }
+                Button(L("Notiz ansehen", "View note")) { NSWorkspace.shared.open(URL(fileURLWithPath: p.note)) }
                     .buttonStyle(.plain).font(.caption).foregroundColor(.secondary)
                     .padding(.vertical, 3).padding(.horizontal, 4)
                     .hoverHighlight()
                 Spacer()
-                Button("Zuordnung übernehmen") {
+                Button(L("Zuordnung übernehmen", "Apply names")) {
                     justApplied = true
                     store.apply(p)
                 }
                     .buttonStyle(.borderedProminent).tint(.indigo).controlSize(.small)
             }
             if justApplied {
-                Text("Wird übernommen …").font(.caption2).foregroundColor(.secondary)
+                Text(L("Wird übernommen …", "Applying …")).font(.caption2).foregroundColor(.secondary)
             }
         }
     }
@@ -1044,20 +1100,20 @@ struct PathRow: View {
                 if !info.isEmpty { InfoTip(title: label, text: info) }
             }
             .frame(width: 108, alignment: .leading)
-            Text(path.isEmpty ? "— aus —" : tilde(path))
+            Text(path.isEmpty ? L("— aus —", "— off —") : tilde(path))
                 .font(.caption)
                 .lineLimit(1).truncationMode(.middle)
                 .foregroundColor(path.isEmpty ? .secondary : .primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if clearable && !path.isEmpty {
-                Button("aus") { path = "" }.font(.caption).buttonStyle(.plain).foregroundColor(.secondary)
+                Button(L("aus", "off")) { path = "" }.font(.caption).buttonStyle(.plain).foregroundColor(.secondary)
             }
-            Button("wählen…") {
+            Button(L("wählen…", "choose…")) {
                 let panel = NSOpenPanel()
                 panel.canChooseFiles = false
                 panel.canChooseDirectories = true
                 panel.canCreateDirectories = true
-                panel.prompt = "Auswählen"
+                panel.prompt = L("Auswählen", "Choose")
                 if !path.isEmpty { panel.directoryURL = URL(fileURLWithPath: untilde(path)) }
                 if panel.runModal() == .OK, let url = panel.url { path = tilde(url.path) }
             }
@@ -1071,95 +1127,95 @@ struct SettingsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("SPEICHERORTE").font(.caption2.weight(.bold)).foregroundColor(.secondary)
-            PathRow(label: "Notizen", path: $store.notesDir,
-                    info: "Zielordner der fertigen Markdown-Notizen. Ideal: dein Obsidian-Vault — dann sind Anrufe sofort verlinkbar.")
-            PathRow(label: "Audio-Archiv", path: $store.audioDir,
-                    info: "Je Anruf eine m4a-Datei: links dein Mikro, rechts die Gegenseite.")
-            PathRow(label: "Kopie (extern)", path: $store.mirrorDir, clearable: true,
-                    info: "Optionaler Spiegel-Ordner, z. B. externe Festplatte. Wird nach jedem Anruf synchronisiert; ist die Platte nicht dran, wird automatisch nachgeholt. Beim ersten Mal fragt macOS nach der Wechseldatenträger-Freigabe.")
+            Text(L("SPEICHERORTE", "STORAGE LOCATIONS")).font(.caption2.weight(.bold)).foregroundColor(.secondary)
+            PathRow(label: L("Notizen", "Notes"), path: $store.notesDir,
+                    info: L("Zielordner der fertigen Markdown-Notizen. Ideal: dein Obsidian-Vault — dann sind Anrufe sofort verlinkbar.", "Destination folder for the finished markdown notes. Ideal: your Obsidian vault — then calls are instantly linkable."))
+            PathRow(label: L("Audio-Archiv", "Audio archive"), path: $store.audioDir,
+                    info: L("Je Anruf eine m4a-Datei: links dein Mikro, rechts die Gegenseite.", "One m4a file per call: your mic on the left, the caller on the right."))
+            PathRow(label: L("Kopie (extern)", "Mirror (external)"), path: $store.mirrorDir, clearable: true,
+                    info: L("Optionaler Spiegel-Ordner, z. B. externe Festplatte. Wird nach jedem Anruf synchronisiert; ist die Platte nicht dran, wird automatisch nachgeholt. Beim ersten Mal fragt macOS nach der Wechseldatenträger-Freigabe.", "Optional mirror folder, e.g. an external drive. Synced after every call; if the drive isn't connected, it's caught up automatically. The first time, macOS asks for removable-volume access."))
 
             HStack(spacing: 3) {
-                Text("TRANSKRIPTION").font(.caption2.weight(.bold)).foregroundColor(.secondary)
-                InfoTip(title: "Transkription",
-                        text: "Lokal = whisper.cpp direkt auf dem Mac: offline, privat, kostenlos. Groq = Cloud-API, bei langen Gesprächen deutlich schneller — dafür verlässt das Audio deinen Mac.")
+                Text(L("TRANSKRIPTION", "TRANSCRIPTION")).font(.caption2.weight(.bold)).foregroundColor(.secondary)
+                InfoTip(title: L("Transkription", "Transcription"),
+                        text: L("Lokal = whisper.cpp direkt auf dem Mac: offline, privat, kostenlos. Groq = Cloud-API, bei langen Gesprächen deutlich schneller — dafür verlässt das Audio deinen Mac.", "Local = whisper.cpp directly on the Mac: offline, private, free. Groq = cloud API, noticeably faster for long calls — but the audio leaves your Mac."))
             }
             .padding(.top, 4)
             Picker("", selection: $store.transcriber) {
-                Text("Lokal (Whisper, offline)").tag("local")
-                Text("Groq API (schneller)").tag("groq")
+                Text(L("Lokal (Whisper, offline)", "Local (Whisper, offline)")).tag("local")
+                Text(L("Groq API (schneller)", "Groq API (faster)")).tag("groq")
             }
             .pickerStyle(.segmented).labelsHidden()
             if store.transcriber == "groq" {
                 HStack(spacing: 4) {
-                    SecureField("Groq API-Key (gsk_…)", text: $store.groqApiKey)
+                    SecureField(L("Groq API-Key (gsk_…)", "Groq API key (gsk_…)"), text: $store.groqApiKey)
                         .textFieldStyle(.roundedBorder).font(.caption)
-                    InfoTip(title: "Groq API-Key",
-                            text: "Gratis auf console.groq.com erstellen. Der Key wird nur lokal gespeichert (~/.config/callnotes) und nie hochgeladen.")
+                    InfoTip(title: L("Groq API-Key", "Groq API key"),
+                            text: L("Gratis auf console.groq.com erstellen. Der Key wird nur lokal gespeichert (~/.config/callnotes) und nie hochgeladen.", "Create one for free at console.groq.com. The key is stored locally only (~/.config/callnotes) and never uploaded."))
                 }
             }
 
             HStack(spacing: 3) {
-                Text("KI-ZUSAMMENFASSUNG").font(.caption2.weight(.bold)).foregroundColor(.secondary)
-                InfoTip(title: "KI-Zusammenfassung",
-                        text: "Wer schreibt Kurzfassung & To-dos? Claude Code nutzt dein bestehendes Claude-Abo (Standard). „Eigene KI\u{201C} spricht jede OpenAI-kompatible API — OpenAI, Groq, OpenRouter oder komplett lokal via Ollama. „Aus\u{201C} = Notiz nur mit Transkript.")
+                Text(L("KI-ZUSAMMENFASSUNG", "AI SUMMARY")).font(.caption2.weight(.bold)).foregroundColor(.secondary)
+                InfoTip(title: L("KI-Zusammenfassung", "AI summary"),
+                        text: L("Wer schreibt Kurzfassung & To-dos? Claude Code nutzt dein bestehendes Claude-Abo (Standard). „Eigene KI\u{201C} spricht jede OpenAI-kompatible API — OpenAI, Groq, OpenRouter oder komplett lokal via Ollama. „Aus\u{201C} = Notiz nur mit Transkript.", "Who writes the summary & to-dos? Claude Code uses your existing Claude subscription (default). \u{201C}Custom AI\u{201D} talks to any OpenAI-compatible API — OpenAI, Groq, OpenRouter, or fully local via Ollama. \u{201C}Off\u{201D} = note with transcript only."))
             }
             .padding(.top, 4)
             Picker("", selection: $store.summarizer) {
                 Text("Claude Code").tag("claude")
-                Text("Eigene KI (OpenAI-API)").tag("openai")
-                Text("Aus").tag("off")
+                Text(L("Eigene KI (OpenAI-API)", "Custom AI (OpenAI API)")).tag("openai")
+                Text(L("Aus", "Off")).tag("off")
             }
             .pickerStyle(.segmented).labelsHidden()
             if store.summarizer == "openai" {
                 HStack(spacing: 4) {
-                    TextField("API-URL, z. B. https://api.openai.com/v1", text: $store.sumUrl)
+                    TextField(L("API-URL, z. B. https://api.openai.com/v1", "API URL, e.g. https://api.openai.com/v1"), text: $store.sumUrl)
                         .textFieldStyle(.roundedBorder).font(.caption)
-                    InfoTip(title: "API-URL",
-                            text: "Basis-URL der OpenAI-kompatiblen API:\nOpenAI: https://api.openai.com/v1\nGroq: https://api.groq.com/openai/v1\nOpenRouter: https://openrouter.ai/api/v1\nOllama (lokal, kostenlos): http://localhost:11434/v1")
+                    InfoTip(title: L("API-URL", "API URL"),
+                            text: L("Basis-URL der OpenAI-kompatiblen API:\nOpenAI: https://api.openai.com/v1\nGroq: https://api.groq.com/openai/v1\nOpenRouter: https://openrouter.ai/api/v1\nOllama (lokal, kostenlos): http://localhost:11434/v1", "Base URL of the OpenAI-compatible API:\nOpenAI: https://api.openai.com/v1\nGroq: https://api.groq.com/openai/v1\nOpenRouter: https://openrouter.ai/api/v1\nOllama (local, free): http://localhost:11434/v1"))
                 }
                 HStack {
-                    TextField("Modell, z. B. gpt-4o-mini", text: $store.sumModel)
+                    TextField(L("Modell, z. B. gpt-4o-mini", "Model, e.g. gpt-4o-mini"), text: $store.sumModel)
                         .textFieldStyle(.roundedBorder).font(.caption)
-                    SecureField("API-Key (bei Ollama leer)", text: $store.sumKey)
+                    SecureField(L("API-Key (bei Ollama leer)", "API key (leave empty for Ollama)"), text: $store.sumKey)
                         .textFieldStyle(.roundedBorder).font(.caption)
                 }
             }
 
             HStack(spacing: 3) {
-                Text("NOTIZ-INHALTE").font(.caption2.weight(.bold)).foregroundColor(.secondary)
-                InfoTip(title: "Notiz-Inhalte",
-                        text: "Welche Abschnitte die KI in die Notiz schreibt. Follow-up-Mail = fertiger Entwurf an die Gegenseite (Dank, Vereinbartes, nächste Schritte). Das Transkript ist immer enthalten.")
+                Text(L("NOTIZ-INHALTE", "NOTE CONTENTS")).font(.caption2.weight(.bold)).foregroundColor(.secondary)
+                InfoTip(title: L("Notiz-Inhalte", "Note contents"),
+                        text: L("Welche Abschnitte die KI in die Notiz schreibt. Follow-up-Mail = fertiger Entwurf an die Gegenseite (Dank, Vereinbartes, nächste Schritte). Das Transkript ist immer enthalten.", "Which sections the AI writes into the note. Follow-up email = ready-to-send draft to the caller (thanks, agreements, next steps). The transcript is always included."))
             }
             .padding(.top, 4)
             HStack {
-                sectionToggle("Kurzfassung", "kurzfassung")
-                sectionToggle("Besprochen", "besprochen")
+                sectionToggle(L("Kurzfassung", "Summary"), "kurzfassung")
+                sectionToggle(L("Besprochen", "Discussed"), "besprochen")
             }
             HStack {
-                sectionToggle("To-dos", "todos")
-                sectionToggle("Follow-up-Mail", "followup")
+                sectionToggle(L("To-dos", "To-dos"), "todos")
+                sectionToggle(L("Follow-up-Mail", "Follow-up email"), "followup")
             }
 
-            Text("ABLAGE ZUSÄTZLICH IN").font(.caption2.weight(.bold)).foregroundColor(.secondary).padding(.top, 4)
+            Text(L("ABLAGE ZUSÄTZLICH IN", "ALSO SAVE TO")).font(.caption2.weight(.bold)).foregroundColor(.secondary).padding(.top, 4)
             HStack(spacing: 4) {
-                Toggle("Apple Notes (Ordner „CallNotes\u{201C})", isOn: $store.destNotes).font(.caption)
+                Toggle(L("Apple Notes (Ordner „CallNotes\u{201C})", "Apple Notes (\u{201C}CallNotes\u{201D} folder)"), isOn: $store.destNotes).font(.caption)
                 InfoTip(title: "Apple Notes",
-                        text: "Legt jede Notiz zusätzlich in Apple Notes ab (Ordner „CallNotes\u{201C}). Beim ersten Anruf fragt macOS nach einer Automation-Freigabe — erlauben.")
+                        text: L("Legt jede Notiz zusätzlich in Apple Notes ab (Ordner „CallNotes\u{201C}). Beim ersten Anruf fragt macOS nach einer Automation-Freigabe — erlauben.", "Also saves every note to Apple Notes (\u{201C}CallNotes\u{201D} folder). On the first call, macOS asks for an Automation permission — allow it."))
                 Spacer()
             }
             HStack(spacing: 4) {
                 Toggle("Nextcloud", isOn: $store.destNextcloud.animation(.easeInOut(duration: 0.18))).font(.caption)
                 InfoTip(title: "Nextcloud",
-                        text: "Lädt die Notiz per WebDAV in deine Cloud (Ordner „CallNotes\u{201C}). App-Passwort in Nextcloud unter Einstellungen → Sicherheit erzeugen — nicht dein Login-Passwort verwenden.")
+                        text: L("Lädt die Notiz per WebDAV in deine Cloud (Ordner „CallNotes\u{201C}). App-Passwort in Nextcloud unter Einstellungen → Sicherheit erzeugen — nicht dein Login-Passwort verwenden.", "Uploads the note via WebDAV to your cloud (\u{201C}CallNotes\u{201D} folder). Create an app password in Nextcloud under Settings → Security — don't use your login password."))
                 Spacer()
             }
             if store.destNextcloud {
                 VStack(alignment: .leading, spacing: 6) {
-                    TextField("Nextcloud-URL (https://…)", text: $store.ncUrl).textFieldStyle(.roundedBorder).font(.caption)
+                    TextField(L("Nextcloud-URL (https://…)", "Nextcloud URL (https://…)"), text: $store.ncUrl).textFieldStyle(.roundedBorder).font(.caption)
                     HStack {
-                        TextField("Benutzer", text: $store.ncUser).textFieldStyle(.roundedBorder).font(.caption)
-                        SecureField("App-Passwort", text: $store.ncPass).textFieldStyle(.roundedBorder).font(.caption)
+                        TextField(L("Benutzer", "Username"), text: $store.ncUser).textFieldStyle(.roundedBorder).font(.caption)
+                        SecureField(L("App-Passwort", "App password"), text: $store.ncPass).textFieldStyle(.roundedBorder).font(.caption)
                     }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -1167,30 +1223,30 @@ struct SettingsSection: View {
             HStack(spacing: 4) {
                 Toggle("Notion", isOn: $store.destNotion.animation(.easeInOut(duration: 0.18))).font(.caption)
                 InfoTip(title: "Notion",
-                        text: "Erstellt je Anruf eine Unterseite. Integration auf notion.so/my-integrations anlegen, Token hier eintragen und die Ziel-Seite über ••• → Verbindungen für die Integration freigeben. Seiten-ID = die 32 Zeichen aus der Seiten-URL.")
+                        text: L("Erstellt je Anruf eine Unterseite. Integration auf notion.so/my-integrations anlegen, Token hier eintragen und die Ziel-Seite über ••• → Verbindungen für die Integration freigeben. Seiten-ID = die 32 Zeichen aus der Seiten-URL.", "Creates a subpage for each call. Create an integration at notion.so/my-integrations, paste the token here, and share the target page with the integration via ••• → Connections. Page ID = the 32 characters from the page URL."))
                 Spacer()
             }
             if store.destNotion {
                 VStack(alignment: .leading, spacing: 6) {
-                    SecureField("Notion Integration-Token (ntn_/secret_…)", text: $store.notionToken).textFieldStyle(.roundedBorder).font(.caption)
-                    TextField("Seiten-ID oder Seiten-URL-ID", text: $store.notionParent).textFieldStyle(.roundedBorder).font(.caption)
+                    SecureField(L("Notion Integration-Token (ntn_/secret_…)", "Notion integration token (ntn_/secret_…)"), text: $store.notionToken).textFieldStyle(.roundedBorder).font(.caption)
+                    TextField(L("Seiten-ID oder Seiten-URL-ID", "Page ID or page URL ID"), text: $store.notionParent).textFieldStyle(.roundedBorder).font(.caption)
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             HStack(spacing: 3) {
-                Text("PUSH").font(.caption2.weight(.bold)).foregroundColor(.secondary)
-                InfoTip(title: "ntfy-Push",
-                        text: "Kostenlose Push-Nachricht aufs Handy nach jeder fertigen Notiz: ntfy.sh-App installieren, ein Thema abonnieren und hier die URL eintragen (https://ntfy.sh/dein-thema).")
+                Text(L("PUSH", "PUSH")).font(.caption2.weight(.bold)).foregroundColor(.secondary)
+                InfoTip(title: L("ntfy-Push", "ntfy push"),
+                        text: L("Kostenlose Push-Nachricht aufs Handy nach jeder fertigen Notiz: ntfy.sh-App installieren, ein Thema abonnieren und hier die URL eintragen (https://ntfy.sh/dein-thema).", "Free push notification to your phone after every finished note: install the ntfy.sh app, subscribe to a topic, and enter the URL here (https://ntfy.sh/your-topic)."))
             }
             .padding(.top, 4)
-            TextField("ntfy.sh-URL (optional)", text: $store.ntfyUrl).textFieldStyle(.roundedBorder).font(.caption)
+            TextField(L("ntfy.sh-URL (optional)", "ntfy.sh URL (optional)"), text: $store.ntfyUrl).textFieldStyle(.roundedBorder).font(.caption)
 
             HStack {
-                Button("Jetzt syncen") { store.syncNow() }
+                Button(L("Jetzt syncen", "Sync now")) { store.syncNow() }
                     .controlSize(.small).disabled(store.mirrorDir.isEmpty)
                 Spacer()
-                Button("Speichern & Neustart") { store.saveAndRestart() }
+                Button(L("Speichern & Neustart", "Save & restart")) { store.saveAndRestart() }
                     .buttonStyle(.borderedProminent).tint(.indigo).controlSize(.small)
             }
             .padding(.top, 2)
@@ -1209,7 +1265,13 @@ struct SettingsSection: View {
 
 struct MenuPanelView: View {
     @EnvironmentObject var store: Store
-    @State private var showSettings = false
+    @State private var showSettings: Bool
+    private let unlimited: Bool
+
+    init(startWithSettings: Bool = false, unlimited: Bool = false) {
+        _showSettings = State(initialValue: startWithSettings)
+        self.unlimited = unlimited
+    }
 
     var body: some View {
         ScrollView {
@@ -1223,7 +1285,7 @@ struct MenuPanelView: View {
                 }
                 VStack(alignment: .leading, spacing: 0) {
                     Text("CallNotes").font(.title3.weight(.bold))
-                    Text(store.currentCall != nil ? "Aufnahme läuft" : (store.daemonRunning ? "Anruf-Autopilot bereit" : "Anruf-Autopilot AUS"))
+                    Text(store.currentCall != nil ? L("Aufnahme läuft", "Recording in progress") : (store.daemonRunning ? L("Anruf-Autopilot bereit", "Call autopilot ready") : L("Anruf-Autopilot AUS", "Call autopilot OFF")))
                         .font(.caption)
                         .foregroundColor(store.currentCall != nil ? .indigo : (store.daemonRunning ? .secondary : .orange))
                 }
@@ -1234,7 +1296,7 @@ struct MenuPanelView: View {
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Hilfe & Erklärungen")
+                .help(L("Hilfe & Erklärungen", "Help & explanations"))
                 Circle()
                     .fill(store.currentCall != nil ? Color.indigo : (store.daemonRunning ? Color.green : Color.orange))
                     .frame(width: 9, height: 9)
@@ -1248,8 +1310,8 @@ struct MenuPanelView: View {
                         Text("\(call.appName) · \(store.callElapsed)").font(.callout.weight(.semibold))
                         Spacer()
                     }
-                    WaveRow(label: "Du", color: .indigo, levels: store.micLevels)
-                    WaveRow(label: "Gegenseite", color: .pink, levels: store.sysLevels)
+                    WaveRow(label: L("Du", "You"), color: .indigo, levels: store.micLevels)
+                    WaveRow(label: L("Gegenseite", "Caller"), color: .pink, levels: store.sysLevels)
                     Divider()
                     ParticipantFieldsView()
                 }
@@ -1276,16 +1338,16 @@ struct MenuPanelView: View {
                 Card {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
-                        Text("\(store.failedCount) Aufnahme\(store.failedCount == 1 ? "" : "n") nicht verarbeitet")
+                        Text(L("\(store.failedCount) Aufnahme\(store.failedCount == 1 ? "" : "n") nicht verarbeitet", "\(store.failedCount) recording\(store.failedCount == 1 ? "" : "s") not processed"))
                             .font(.callout)
-                        InfoTip(title: "Nicht verarbeitet",
-                                text: "Diese Anrufe wurden aufgenommen, aber die Verarbeitung schlug fehl (z. B. Whisper-Modell fehlte, Absturz — oder die Aufnahme ist leer). „Erneut versuchen\u{201C} startet die Verarbeitung nochmal; schlägt sie wieder fehl, ist die Aufnahme vermutlich unbrauchbar → „Verwerfen\u{201C} löscht sie endgültig.")
+                        InfoTip(title: L("Nicht verarbeitet", "Not processed"),
+                                text: L("Diese Anrufe wurden aufgenommen, aber die Verarbeitung schlug fehl (z. B. Whisper-Modell fehlte, Absturz — oder die Aufnahme ist leer). „Erneut versuchen\u{201C} startet die Verarbeitung nochmal; schlägt sie wieder fehl, ist die Aufnahme vermutlich unbrauchbar → „Verwerfen\u{201C} löscht sie endgültig.", "These calls were recorded, but processing failed (e.g. missing Whisper model, a crash — or the recording is empty). \u{201C}Retry\u{201D} runs processing again; if it fails again, the recording is likely unusable → \u{201C}Discard\u{201D} deletes it for good."))
                         Spacer()
-                        Button("Verwerfen") { store.discardFailed() }
+                        Button(L("Verwerfen", "Discard")) { store.discardFailed() }
                             .buttonStyle(.plain).font(.caption).foregroundColor(.secondary)
                             .padding(.vertical, 3).padding(.horizontal, 4)
                             .hoverHighlight()
-                        Button("Erneut versuchen") { store.retryFailed() }
+                        Button(L("Erneut versuchen", "Retry")) { store.retryFailed() }
                             .buttonStyle(.borderedProminent).tint(.orange).controlSize(.small)
                     }
                 }
@@ -1296,11 +1358,11 @@ struct MenuPanelView: View {
                 Card {
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.down.circle.fill").foregroundColor(.indigo)
-                        Text("Version \(v) ist verfügbar").font(.callout)
+                        Text(L("Version \(v) ist verfügbar", "Version \(v) available")).font(.callout)
                         InfoTip(title: "Update",
-                                text: "Aktualisieren im Terminal: in den callnotes-Ordner wechseln, dann git pull && ./install.sh — deine Einstellungen bleiben erhalten.")
+                                text: L("Aktualisieren im Terminal: in den callnotes-Ordner wechseln, dann git pull && ./install.sh — deine Einstellungen bleiben erhalten.", "To update in Terminal: cd into the callnotes folder, then run git pull && ./install.sh — your settings are preserved."))
                         Spacer()
-                        Button("Ansehen") { NSWorkspace.shared.open(URL(string: kRepoURL + "/releases/latest")!) }
+                        Button(L("Ansehen", "View")) { NSWorkspace.shared.open(URL(string: kRepoURL + "/releases/latest")!) }
                             .controlSize(.small)
                     }
                 }
@@ -1313,9 +1375,9 @@ struct MenuPanelView: View {
                         Image(systemName: "phone.and.waveform")
                             .font(.title2)
                             .foregroundColor(.secondary.opacity(0.5))
-                        Text("Noch keine Anrufe aufgezeichnet")
+                        Text(L("Noch keine Anrufe aufgezeichnet", "No calls recorded yet"))
                             .font(.caption).foregroundColor(.secondary)
-                        Text("Sobald du telefonierst, erscheint hier die Live-Aufnahme.")
+                        Text(L("Sobald du telefonierst, erscheint hier die Live-Aufnahme.", "As soon as you're on a call, the live recording appears here."))
                             .font(.caption2).foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                     }
@@ -1326,7 +1388,7 @@ struct MenuPanelView: View {
             // Letzte Anrufe
             if !store.lastNotes.isEmpty {
                 Card {
-                    Text("LETZTE ANRUFE").font(.caption2.weight(.bold)).foregroundColor(.secondary)
+                    Text(L("LETZTE ANRUFE", "RECENT CALLS")).font(.caption2.weight(.bold)).foregroundColor(.secondary)
                     ForEach(store.lastNotes, id: \.self) { n in
                         Button { store.openNote(n) } label: {
                             HStack(spacing: 6) {
@@ -1349,7 +1411,7 @@ struct MenuPanelView: View {
             DisclosureGroup(isExpanded: $showSettings) {
                 SettingsSection().padding(.top, 6)
             } label: {
-                Label("Einstellungen", systemImage: "gearshape.fill")
+                Label(L("Einstellungen", "Settings"), systemImage: "gearshape.fill")
                     .font(.callout.weight(.medium))
             }
 
@@ -1358,7 +1420,7 @@ struct MenuPanelView: View {
                     Text(store.status).font(.caption).foregroundColor(.secondary).lineLimit(1)
                 }
                 Spacer()
-                Button("Beenden") { NSApp.terminate(nil) }
+                Button(L("Beenden", "Quit")) { NSApp.terminate(nil) }
                     .buttonStyle(.plain).font(.caption).foregroundColor(.secondary)
                     .padding(.vertical, 3).padding(.horizontal, 4)
                     .hoverHighlight()
@@ -1367,7 +1429,47 @@ struct MenuPanelView: View {
         .padding(14)
         .frame(width: 400)
         }
-        .frame(maxHeight: 620)
+        .frame(maxHeight: unlimited ? .infinity : 620)
+    }
+}
+
+// MARK: - Schaufenster-Fenster fuer README-Screenshots
+
+final class ShowcaseWindow {
+    static var window: NSWindow?
+
+    static func show(store: Store, mode: String) {
+        NSApp.appearance = NSAppearance(named: .darkAqua) // Screenshots immer im Dark Mode
+        let root = MenuPanelView(startWithSettings: mode == "settings", unlimited: true)
+            .environmentObject(store)
+            .background(Color(nsColor: .windowBackgroundColor))
+        let hc = NSHostingController(rootView: root)
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 700),
+                         styleMask: [.borderless],
+                         backing: .buffered, defer: false)
+        w.hasShadow = false
+        w.isOpaque = true
+        w.backgroundColor = NSColor.windowBackgroundColor
+        w.contentViewController = hc
+        let size = hc.view.fittingSize
+        w.setContentSize(NSSize(width: 400, height: max(size.height, 300)))
+        w.setFrameOrigin(NSPoint(x: 120, y: 160))
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        window = w
+        // Selbst-Render statt screencapture (keine Bildschirmaufnahme-Freigabe noetig):
+        // CALLNOTES_SHOT=/pfad.png -> Fenster als PNG schreiben und beenden.
+        if let shotPath = ProcessInfo.processInfo.environment["CALLNOTES_SHOT"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                guard let view = w.contentView,
+                      let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { NSApp.terminate(nil); return }
+                view.cacheDisplay(in: view.bounds, to: rep)
+                if let data = rep.representation(using: .png, properties: [:]) {
+                    try? data.write(to: URL(fileURLWithPath: shotPath))
+                }
+                NSApp.terminate(nil)
+            }
+        }
     }
 }
 
@@ -1375,7 +1477,7 @@ struct MenuPanelView: View {
 
 @main
 struct CallNotesApp: App {
-    @StateObject private var store = Store()
+    @StateObject private var store = Store(showcase: ProcessInfo.processInfo.environment["CALLNOTES_SHOWCASE"])
 
     var body: some Scene {
         MenuBarExtra {

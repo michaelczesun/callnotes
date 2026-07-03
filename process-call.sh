@@ -28,8 +28,8 @@ p("MODEL_CFG", path("whisperModel"))
 p("CLAUDE_CFG", path("claudeBin"))
 p("NTFY_URL", d.get("ntfyUrl") or "")
 p("LANG_CFG", d.get("language") or "de")
-p("SELF_LABEL", d.get("speakerSelf") or "Ich")
-p("PEER_LABEL", d.get("speakerPeer") or "Gesprächspartner")
+p("SELF_LABEL", d.get("speakerSelf") or "")
+p("PEER_LABEL", d.get("speakerPeer") or "")
 p("CONTEXT", d.get("context") or "")
 p("MOC_ON", "1" if d.get("notesMoc", True) else "0")
 p("DIARIZE", "1" if d.get("diarize", True) else "0")
@@ -61,6 +61,24 @@ MERGE="$SCRIPT_DIR/merge-transcript.py"
 MOC="$NOTES_DIR/anrufe-moc.md"
 SECRETS="$HOME/.config/callnotes/secrets.env"
 [ -f "$SECRETS" ] || SECRETS="$HOME/.config/dasgeht/secrets.env"
+
+# Sprach-Weiche: Notiz-Skelett, Sprecher-Labels und Status-Phasen folgen der
+# Transkriptions-Sprache (language) — de = Deutsch, alles andere = Englisch.
+if [ "$LANG_CFG" = "de" ]; then
+  [ -n "$SELF_LABEL" ] || SELF_LABEL="Ich"
+  [ -n "$PEER_LABEL" ] || PEER_LABEL="Gesprächspartner"
+  SPEAKER_PREFIX="Sprecher"
+  T_PH_TRANS="Transkription läuft…"; T_PH_DIA="Sprecher-Erkennung…"; T_PH_AI="KI-Zusammenfassung…"; T_PH_STORE="Archiv & Ablage…"
+  T_TRANSCRIPT="Transkript"; T_CALL="Telefonat"
+  T_AUDIO_NOTE="Audio-Archiv"; T_LEFT="links"; T_RIGHT="rechts"
+else
+  [ -n "$SELF_LABEL" ] || SELF_LABEL="Me"
+  [ -n "$PEER_LABEL" ] || PEER_LABEL="Caller"
+  SPEAKER_PREFIX="Speaker"
+  T_PH_TRANS="Transcribing…"; T_PH_DIA="Detecting speakers…"; T_PH_AI="AI summary…"; T_PH_STORE="Archiving & delivery…"
+  T_TRANSCRIPT="Transcript"; T_CALL="Call"
+  T_AUDIO_NOTE="Audio archive"; T_LEFT="left"; T_RIGHT="right"
+fi
 
 # Groq-Key: Config zuerst, sonst Tresor (secrets.env)
 GROQ_KEY="$GROQ_KEY_CFG"
@@ -163,7 +181,7 @@ PY
   [ -s "$REC/$2.json" ]
 }
 
-phase "Transkription läuft…"
+phase "$T_PH_TRANS"
 say "Transkribiere ($TRANSCRIBER, $LANG_CFG) …"
 transcribe mic.caf mic ""; MIC_OK=$?
 transcribe system.caf system keep; SYS_OK=$?
@@ -173,7 +191,7 @@ transcribe system.caf system keep; SYS_OK=$?
 DIA_JSON="$REC/diarization.json"
 N_SPEAKERS=1
 if [ "$DIARIZE" = "1" ] && [ $SYS_OK -eq 0 ] && [ -x "$VENV_PY" ] && [ -s "$REC/system.16k.wav" ]; then
-  phase "Sprecher-Erkennung…"
+  phase "$T_PH_DIA"
   say "Diarisierung (sherpa-onnx) …"
   "$VENV_PY" "$SCRIPT_DIR/diarize.py" "$REC/system.16k.wav" "$DIA_THRESHOLD" > "$DIA_JSON" 2>>"$REC/diarize.log" || rm -f "$DIA_JSON"
   if [ -s "$DIA_JSON" ]; then
@@ -186,7 +204,7 @@ rm -f "$REC/system.16k.wav"
 # --- Dialog mergen --------------------------------------------------------------
 DIALOG="$REC/dialog.md"
 if [ "$N_SPEAKERS" -gt 1 ]; then
-  python3 "$MERGE" "$REC/mic.json" "$REC/system.json" "$SELF_LABEL" "$PEER_LABEL" "$DIA_JSON" > "$DIALOG" 2>/dev/null
+  python3 "$MERGE" "$REC/mic.json" "$REC/system.json" "$SELF_LABEL" "$PEER_LABEL" "$DIA_JSON" "$SPEAKER_PREFIX" > "$DIALOG" 2>/dev/null
 else
   python3 "$MERGE" "$REC/mic.json" "$REC/system.json" "$SELF_LABEL" "$PEER_LABEL" > "$DIALOG" 2>/dev/null
 fi
@@ -236,24 +254,24 @@ make_summary() {
     [ -n "$CLAUDE_BIN" ] && command -v "$CLAUDE_BIN" >/dev/null 2>&1 || return 1
   fi
   local extra=""
-  if [ "$N_SPEAKERS" -gt 1 ]; then
-    extra="Auf der Gegenseite wurden $N_SPEAKERS verschiedene Stimmen erkannt (\"Sprecher 1..$N_SPEAKERS\", nummeriert nach erster Wortmeldung)."
-    [ -n "$PARTICIPANTS" ] && extra="$extra Laut $SELF_LABEL waren dabei: $PARTICIPANTS."
-    extra="$extra Haenge ANS ENDE deiner Antwort eine einzelne Zeile an: ZUORDNUNG: Sprecher 1=<Name oder ?>; Sprecher 2=<Name oder ?>; ... — nutze Namen NUR wenn sie sich klar aus Anreden/Selbstvorstellungen im Transkript ergeben, sonst ?."
-  elif [ -n "$PARTICIPANTS" ]; then
-    extra="Gespraechspartner laut $SELF_LABEL: $PARTICIPANTS."
-  fi
-  # Notiz-Sektionen laut Config zusammenstellen
   local structure=""
-  case ",$SECTIONS," in *,kurzfassung,*) structure="$structure
+  if [ "$LANG_CFG" = "de" ]; then
+    if [ "$N_SPEAKERS" -gt 1 ]; then
+      extra="Auf der Gegenseite wurden $N_SPEAKERS verschiedene Stimmen erkannt (\"$SPEAKER_PREFIX 1..$N_SPEAKERS\", nummeriert nach erster Wortmeldung)."
+      [ -n "$PARTICIPANTS" ] && extra="$extra Laut $SELF_LABEL waren dabei: $PARTICIPANTS."
+      extra="$extra Haenge ANS ENDE deiner Antwort eine einzelne Zeile an: ZUORDNUNG: $SPEAKER_PREFIX 1=<Name oder ?>; $SPEAKER_PREFIX 2=<Name oder ?>; ... — nutze Namen NUR wenn sie sich klar aus Anreden/Selbstvorstellungen im Transkript ergeben, sonst ?."
+    elif [ -n "$PARTICIPANTS" ]; then
+      extra="Gespraechspartner laut $SELF_LABEL: $PARTICIPANTS."
+    fi
+    case ",$SECTIONS," in *,kurzfassung,*) structure="$structure
 ## Kurzfassung
 2-4 Saetze: mit wem (falls erkennbar), worum ging es, Ergebnis.
 ";; esac
-  case ",$SECTIONS," in *,besprochen,*) structure="$structure
+    case ",$SECTIONS," in *,besprochen,*) structure="$structure
 ## Besprochen
 - die wesentlichen Punkte, kompakt
 ";; esac
-  case ",$SECTIONS," in *,todos,*) structure="$structure
+    case ",$SECTIONS," in *,todos,*) structure="$structure
 ## Zusagen & To-dos
 - [ ] (selbst) was $SELF_LABEL zugesagt hat / tun muss
 - [ ] (gegenseite) was der andere zugesagt hat
@@ -262,14 +280,14 @@ make_summary() {
 ## Offene Punkte
 - was unklar blieb oder Follow-up braucht (wenn nichts: \"- keine\")
 ";; esac
-  case ",$SECTIONS," in *,followup,*) structure="$structure
+    case ",$SECTIONS," in *,followup,*) structure="$structure
 ## Follow-up-Mail (Entwurf)
 Kurzer, freundlicher Mail-Entwurf an die Gegenseite: Dank, Vereinbartes, naechste Schritte. Kein Betreff-Gedoens, direkt der Text.
 ";; esac
-  {
-    cat <<PROMPT
+    {
+      cat <<PROMPT
 Du bekommst das Transkript eines Telefonats. "$SELF_LABEL" = die Person, deren Notiz das ist;
-"$PEER_LABEL" bzw. "Sprecher N" = die Personen am anderen Ende.${CONTEXT:+ Kontext: $CONTEXT}
+"$PEER_LABEL" bzw. "$SPEAKER_PREFIX N" = die Personen am anderen Ende.${CONTEXT:+ Kontext: $CONTEXT}
 $extra
 Whisper-Fehler (Namen, Zahlen, Fachbegriffe) im Kontext still korrigieren; akustisch
 Unklares als [unklar] markieren, NIE raten.
@@ -282,8 +300,56 @@ Halte dich strikt ans Transkript, erfinde nichts dazu.
 
 --- TRANSKRIPT ---
 PROMPT
-    cat "$DIALOG"
-  } > "$REC/prompt.txt"
+      cat "$DIALOG"
+    } > "$REC/prompt.txt"
+  else
+    if [ "$N_SPEAKERS" -gt 1 ]; then
+      extra="$N_SPEAKERS distinct voices were detected on the far end (\"$SPEAKER_PREFIX 1..$N_SPEAKERS\", numbered by first utterance)."
+      [ -n "$PARTICIPANTS" ] && extra="$extra According to $SELF_LABEL the participants were: $PARTICIPANTS."
+      extra="$extra Append ONE single line at the END of your answer: MAPPING: $SPEAKER_PREFIX 1=<name or ?>; $SPEAKER_PREFIX 2=<name or ?>; ... — use a name ONLY when it clearly follows from greetings/self-introductions in the transcript, otherwise ?."
+    elif [ -n "$PARTICIPANTS" ]; then
+      extra="Participants according to $SELF_LABEL: $PARTICIPANTS."
+    fi
+    case ",$SECTIONS," in *,kurzfassung,*) structure="$structure
+## Summary
+2-4 sentences: who (if identifiable), what it was about, outcome.
+";; esac
+    case ",$SECTIONS," in *,besprochen,*) structure="$structure
+## Discussed
+- the key points, concise
+";; esac
+    case ",$SECTIONS," in *,todos,*) structure="$structure
+## Commitments & to-dos
+- [ ] (self) what $SELF_LABEL committed to / must do
+- [ ] (other side) what the other party committed to
+(only real commitments; if none: \"- none\")
+
+## Open items
+- anything unclear or needing follow-up (if nothing: \"- none\")
+";; esac
+    case ",$SECTIONS," in *,followup,*) structure="$structure
+## Follow-up email (draft)
+Short, friendly draft to the other party: thanks, what was agreed, next steps. No subject line, just the body.
+";; esac
+    {
+      cat <<PROMPT
+You are given the transcript of a phone call. "$SELF_LABEL" = the person this note belongs to;
+"$PEER_LABEL" / "$SPEAKER_PREFIX N" = the people on the other end.${CONTEXT:+ Context: $CONTEXT}
+$extra
+Silently correct obvious transcription errors (names, numbers, jargon) from context; mark
+acoustically unclear parts as [unclear], NEVER guess.
+
+Reply ONLY with Markdown in exactly this structure (no preamble, no code block):
+
+# Call with <name of the other party or topic> — <MM/DD>
+$structure
+Stick strictly to the transcript; invent nothing.
+
+--- TRANSCRIPT ---
+PROMPT
+      cat "$DIALOG"
+    } > "$REC/prompt.txt"
+  fi
 
   if [ "$SUMMARIZER" = "openai" ]; then
     summarize_openai || { say "  KI-API nicht erreichbar ($SUM_URL) — Details in summarizer.log"; return 1; }
@@ -297,28 +363,37 @@ PROMPT
   grep -q '^#' "$SUMMARY" || return 1
 }
 
-phase "KI-Zusammenfassung…"
+phase "$T_PH_AI"
 say "Zusammenfassung ($SUMMARIZER) …"
 if ! make_summary; then
   [ "$SUMMARIZER" = "off" ] && say "  KI-Zusammenfassung deaktiviert — Notiz mit Transkript" || say "  KI nicht verfuegbar — Notiz ohne Zusammenfassung"
-  {
-    echo "# Telefonat via $APP — $DATE_PART $TIME_NICE"
-    echo
-    echo "## Kurzfassung"
-    echo "_Automatische Zusammenfassung nicht verfuegbar — Transkript unten._"
-  } > "$SUMMARY"
+  if [ "$LANG_CFG" = "de" ]; then
+    {
+      echo "# Telefonat via $APP — $DATE_PART $TIME_NICE"
+      echo
+      echo "## Kurzfassung"
+      echo "_Automatische Zusammenfassung nicht verfuegbar — Transkript unten._"
+    } > "$SUMMARY"
+  else
+    {
+      echo "# Call via $APP — $DATE_PART $TIME_NICE"
+      echo
+      echo "## Summary"
+      echo "_Automatic summary unavailable — transcript below._"
+    } > "$SUMMARY"
+  fi
 fi
 
-# Claude-Namensvorschlaege ("ZUORDNUNG: Sprecher 1=Stefan; ...") extrahieren + aus Notiz strippen
-SUGGESTIONS=$(grep -o 'ZUORDNUNG:.*' "$SUMMARY" | head -1 | sed 's/^ZUORDNUNG: *//')
-grep -v '^ZUORDNUNG:' "$SUMMARY" > "$SUMMARY.tmp" && mv "$SUMMARY.tmp" "$SUMMARY"
+# KI-Namensvorschlaege ("ZUORDNUNG:/MAPPING: Sprecher 1=Stefan; ...") extrahieren + aus Notiz strippen
+SUGGESTIONS=$(grep -oE '(ZUORDNUNG|MAPPING):.*' "$SUMMARY" | head -1 | sed -E 's/^(ZUORDNUNG|MAPPING): *//')
+grep -vE '^(ZUORDNUNG|MAPPING):' "$SUMMARY" > "$SUMMARY.tmp" && mv "$SUMMARY.tmp" "$SUMMARY"
 
 # --- Notiz bauen ------------------------------------------------------------------
 mkdir -p "$NOTES_DIR"
 TITLE=$(head -1 "$SUMMARY" | sed 's/^# *//')
 SLUG=$(echo "$TITLE" | sed -E 's/—.*$//; s/ä/ae/g; s/ö/oe/g; s/ü/ue/g; s/Ä/ae/g; s/Ö/oe/g; s/Ü/ue/g; s/ß/ss/g' \
   | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null | tr '[:upper:]' '[:lower:]' \
-  | sed -E 's/telefonat//; s/unbekannt//; s/[^a-z0-9]+/-/g; s/^-+|-+$//g; s/-+/-/g' | cut -c1-40 | sed 's/-$//')
+  | sed -E 's/telefonat//; s/call with//; s/\bcall\b//; s/unbekannt//; s/unknown//; s/[^a-z0-9]+/-/g; s/^-+|-+$//g; s/-+/-/g' | cut -c1-40 | sed 's/-$//')
 [ -n "$SLUG" ] || SLUG="$APP"
 NOTE="$NOTES_DIR/${DATE_PART}-${TIME_PART}-anruf-${SLUG}.md"
 # nie eine bestehende Notiz ueberschreiben (zweiter Anruf in derselben Minute)
@@ -340,12 +415,12 @@ M4A_NAME="${STAMP}_${APP}.m4a"
   echo
   cat "$SUMMARY"
   echo
-  echo "## Transkript"
+  echo "## $T_TRANSCRIPT"
   echo
   cat "$DIALOG"
   echo
   echo "---"
-  echo "Audio-Archiv: \`$AUDIO_DIR/$M4A_NAME\` (links = $SELF_LABEL, rechts = $PEER_LABEL)"
+  echo "$T_AUDIO_NOTE: \`$AUDIO_DIR/$M4A_NAME\` ($T_LEFT = $SELF_LABEL, $T_RIGHT = $PEER_LABEL)"
   if [ "$MOC_ON" = "1" ]; then
     echo
     echo "[[anrufe-moc]]"
@@ -354,6 +429,11 @@ M4A_NAME="${STAMP}_${APP}.m4a"
 
 # MOC pflegen (anlegen falls fehlt, neuen Eintrag oben in die Liste)
 if [ "$MOC_ON" = "1" ]; then
+  if [ "$LANG_CFG" = "de" ]; then
+    MOC_TITLE="Anrufe MOC"; MOC_DESC="Automatische Telefonat-Notizen (CallNotes)."; MOC_LIST="Anrufe"
+  else
+    MOC_TITLE="Calls MOC"; MOC_DESC="Automatic call notes (CallNotes)."; MOC_LIST="Calls"
+  fi
   if [ ! -f "$MOC" ]; then
     {
       echo "---"
@@ -362,25 +442,26 @@ if [ "$MOC_ON" = "1" ]; then
       echo "updated: $DATE_PART"
       echo "---"
       echo
-      echo "# Anrufe MOC"
+      echo "# $MOC_TITLE"
       echo
-      echo "Automatische Telefonat-Notizen (calltap -> whisper -> Claude)."
+      echo "$MOC_DESC"
       echo
-      echo "## Anrufe"
+      echo "## $MOC_LIST"
     } > "$MOC"
   fi
   NOTE_BASE=$(basename "$NOTE" .md)
-  python3 - "$MOC" "$NOTE_BASE" "$TITLE" "$DATE_PART" <<'PY'
+  python3 - "$MOC" "$NOTE_BASE" "$TITLE" "$DATE_PART" "$MOC_LIST" <<'PY'
 import sys
-moc, base, title, date = sys.argv[1:5]
+moc, base, title, date, list_header = sys.argv[1:6]
 with open(moc, encoding="utf-8") as f:
     lines = f.read().splitlines()
 entry = f"- [[{base}]] — {title}"
 if not any(base in l for l in lines):
     try:
-        i = next(i for i, l in enumerate(lines) if l.strip() == "## Anrufe") + 1
+        i = next(i for i, l in enumerate(lines)
+                 if l.strip() in (f"## {list_header}", "## Anrufe", "## Calls")) + 1
     except StopIteration:
-        lines.append("## Anrufe"); i = len(lines)
+        lines.append(f"## {list_header}"); i = len(lines)
     lines.insert(i, entry)
 lines = [f"updated: {date}" if l.startswith("updated:") else l for l in lines]
 with open(moc, "w", encoding="utf-8") as f:
@@ -389,7 +470,7 @@ PY
 fi
 say "Notiz: $NOTE"
 
-phase "Archiv & Ablage…"
+phase "$T_PH_STORE"
 # --- Audio-Archiv (Stereo-m4a: L=selbst, R=Gegenseite), Rohdaten weg ---------------
 mkdir -p "$AUDIO_DIR"
 M4A="$AUDIO_DIR/$M4A_NAME"
@@ -407,9 +488,9 @@ if [ "$N_SPEAKERS" -gt 1 ] && [ -s "$DIA_JSON" ] && [ -s "$REC/system.caf" ]; th
   REVIEW="$BASE/review/$STAMP"
   PENDING_DIR="$BASE/state/pending"
   mkdir -p "$REVIEW" "$PENDING_DIR"
-  python3 - "$DIA_JSON" "$REC/system.caf" "$REVIEW" "$PENDING_DIR/$STAMP.json" "$NOTE" "$APP" "$STAMP" "$SUGGESTIONS" "$PARTICIPANTS" <<'PY'
+  python3 - "$DIA_JSON" "$REC/system.caf" "$REVIEW" "$PENDING_DIR/$STAMP.json" "$NOTE" "$APP" "$STAMP" "$SUGGESTIONS" "$PARTICIPANTS" "$SPEAKER_PREFIX" <<'PY'
 import json, subprocess, sys, os
-dia_p, caf, review, pending_p, note, app, stamp, suggestions, participants = sys.argv[1:10]
+dia_p, caf, review, pending_p, note, app, stamp, suggestions, participants, prefix = sys.argv[1:11]
 dia = json.load(open(dia_p))
 segs = dia.get("segments", [])
 # Sprecher-Nummerierung wie im Transkript: nach erster Wortmeldung
@@ -431,11 +512,11 @@ for spk, num in sorted(order.items(), key=lambda kv: kv[1]):
     longest = max(mine, key=lambda s: s["end"] - s["start"])
     start = longest["start"]
     dur = min(longest["end"] - start, 8.0)
-    clip = os.path.join(review, f"sprecher_{num}.m4a")
+    clip = os.path.join(review, f"speaker_{num}.m4a")
     subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
                     "-ss", str(start), "-t", str(max(dur, 1.5)), "-i", caf,
                     "-ar", "44100", "-ac", "1", "-c:a", "aac", "-b:a", "80k", clip], check=False)
-    label = f"Sprecher {num}"
+    label = f"{prefix} {num}"
     speakers.append({"label": label, "clip": clip,
                      "suggestion": sugg.get(label, ""),
                      "totalSec": round(sum(s["end"] - s["start"] for s in mine), 1)})

@@ -94,7 +94,7 @@ def load_diarization(path):
     return d.get("segments") or None
 
 
-def assign_speakers(sys_segs, dia_segs):
+def assign_speakers(sys_segs, dia_segs, prefix="Sprecher"):
     # Whisper-Segment -> Diarisierungs-Sprecher mit groesster Zeitueberlappung.
     # Sprecher-Nummern nach erster Wortmeldung sortieren (Sprecher 1 = wer zuerst spricht).
     first_seen = {}
@@ -109,7 +109,7 @@ def assign_speakers(sys_segs, dia_segs):
             if ov > best_ov:
                 best, best_ov = ds["speaker"], ov
         if best is not None:
-            seg["who"] = f"Sprecher {order[best]}"
+            seg["who"] = f"{prefix} {order[best]}"
     return sys_segs
 
 
@@ -123,7 +123,8 @@ def main():
     if len(sys.argv) > 5:
         dia = load_diarization(sys.argv[5])
         if dia:
-            sys_segs = assign_speakers(sys_segs, dia)
+            prefix = sys.argv[6] if len(sys.argv) > 6 else "Sprecher"
+            sys_segs = assign_speakers(sys_segs, dia, prefix)
     mic_segs = [m for m in mic_segs if not crosstalk(m, sys_segs)]
     segs = mic_segs + sys_segs
     segs.sort(key=lambda s: s["start"])
