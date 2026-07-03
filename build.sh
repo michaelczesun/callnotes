@@ -1,18 +1,22 @@
 #!/bin/bash
-# build.sh — baut beide Apps nach ~/Applications:
-#   calltap.app   (Recorder/Daemon, headless) — App-Bundle ist Pflicht: nur so
-#                 bekommt es eine eigene TCC-Identitaet fuer Mikrofon + Systemaudio.
-#   CallNotes.app (Einstellungs-Fenster: Speicherorte, Status, Sync)
+# build.sh — baut die zwei Apps:
+#   calltap.app   -> ~/Applications (Recorder/Daemon, headless) — bewusst im Benutzer-
+#                 ordner: die Mikrofon-/Systemaudio-TCC-Freigaben haengen daran, ein
+#                 Umzug wuerde sie riskieren. Sichtbar bist du hier eh nie.
+#   CallNotes.app -> /Applications (Menueleisten-App) — im normalen Programme-Ordner,
+#                 damit sie ueber Spotlight/Finder auffindbar ist.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APPS="$HOME/Applications"
+USER_APPS="$HOME/Applications"
+APPS="/Applications"
+mkdir -p "$USER_APPS"
 
 # App-Icon bei Bedarf erzeugen
 [ -f assets/AppIcon.icns ] || swift assets/make-assets.swift
 
 # --- calltap.app ---------------------------------------------------------------
-APP="$APPS/calltap.app"
+APP="$USER_APPS/calltap.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 swiftc -O calltap.swift -o "$APP/Contents/MacOS/calltap" \
   -framework CoreAudio -framework AudioToolbox -framework AVFoundation -framework Foundation

@@ -117,5 +117,5 @@ echo "(Mikrofon + Systemaudio-Aufnahme) — beide erlauben. Falls kein Dialog ka
 echo "Systemeinstellungen > Datenschutz & Sicherheit > Mikrofon bzw."
 echo "'Bildschirm- & Systemaudioaufnahme' > calltap aktivieren."
 echo
-echo "Einstellungen (Speicherorte, externe Platte): ~/Applications/CallNotes.app"
+echo "Einstellungen (Speicherorte, externe Platte): /Applications/CallNotes.app"
 echo "Fertig."
