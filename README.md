@@ -48,6 +48,12 @@ A finished Markdown note, ~1 minute later:
 - Delivered to your **notes folder** (Obsidian-friendly), plus optionally **Apple Notes,
   Nextcloud, Notion**, an **external drive mirror**, and an **ntfy push**
 
+## How it works
+
+<p align="center">
+  <img src="assets/how-it-works.png" alt="How CallNotes works — from call detection to markdown note" width="640">
+</p>
+
 ## The menu bar app
 
 Everything lives in the menu bar (phone icon):

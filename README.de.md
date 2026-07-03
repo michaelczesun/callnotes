@@ -52,6 +52,12 @@ Eine fertige Markdown-Notiz, etwa eine Minute später:
   **Apple Notes, Nextcloud, Notion**, gespiegelt auf eine **externe Festplatte**,
   plus **ntfy-Push** aufs Handy
 
+## So funktioniert es
+
+<p align="center">
+  <img src="assets/how-it-works.png" alt="So funktioniert CallNotes — vom erkannten Anruf zur Markdown-Notiz" width="640">
+</p>
+
 ## Die Menüleisten-App
 
 Alles sitzt in der Menüleiste (Telefon-Symbol):
