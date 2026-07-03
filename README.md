@@ -38,8 +38,9 @@ a visible meeting bot, or a cloud subscription. CallNotes needs none of that:
   speaker attribution for 1:1 calls, no AI guessing needed.**
 - For conference calls, local **speaker diarization** (sherpa-onnx) splits the remote
   mix into "Speaker 1..N" — you match names via short audio snippets and a dropdown.
-- Transcription runs **on-device** (whisper.cpp, Metal) — or via Groq API if you
-  prefer speed over privacy. Your choice, one toggle.
+- Transcription runs **on-device** — whisper.cpp (Metal) or **NVIDIA Parakeet TDT v3**
+  (the fastest option, 25 EU languages, no repetition loops) — or via Groq API if you
+  prefer cloud speed. Your choice, one toggle.
 - **Bring your own AI** for summaries: Claude Code (default), any OpenAI-compatible
   API (OpenAI, Groq, OpenRouter), fully local via **Ollama** — or none at all.
 
@@ -117,7 +118,7 @@ settings. Highlights:
 |---|---|
 | `apps` | bundle IDs that trigger recording |
 | `tapScope` | `app` = record only the call app family (default), `global` = all system audio |
-| `transcriber` / `groqApiKey` | `local` (whisper.cpp) or `groq` (cloud, faster) |
+| `transcriber` / `groqApiKey` | `local` (whisper.cpp), `parakeet` (fastest, `./install.sh --with-parakeet`) or `groq` (cloud) |
 | `summarizer` (+ `summarizerUrl/Model/ApiKey`) | `claude` (Claude Code CLI), `openai` (any OpenAI-compatible API incl. Ollama/Groq/OpenRouter) or `off` |
 | `noteSections` | which sections Claude writes: summary, discussed, todos, follow-up email |
 | `destinations` | extra delivery: Apple Notes, Nextcloud (WebDAV), Notion |

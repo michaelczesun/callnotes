@@ -39,8 +39,9 @@ Jedes Call-Recording-Tool braucht entweder einen virtuellen Audio-Treiber
 - Bei Konferenzen trennt eine lokale **Sprecher-Diarisierung** (sherpa-onnx) den
   Mix der Gegenseite in „Sprecher 1..N" — Namen ordnest du per Hör-Schnipsel und
   Dropdown zu.
-- Transkription läuft **on-device** (whisper.cpp, Metal) — oder über die Groq-API,
-  wenn dir Tempo wichtiger ist als Offline. Ein Schalter.
+- Transkription läuft **on-device** — whisper.cpp (Metal) oder **NVIDIA Parakeet TDT v3**
+  (die schnellste Option, 25 EU-Sprachen, keine Wiederholungsschleifen) — oder über die
+  Groq-API, wenn du Cloud-Tempo willst. Ein Schalter.
 - **KI deiner Wahl** für die Zusammenfassung: Claude Code (Standard), jede
   OpenAI-kompatible API (OpenAI, Groq, OpenRouter) oder komplett lokal via **Ollama** —
   oder ganz ohne.
@@ -124,7 +125,7 @@ Einstellungen in der Menüleiste. Die wichtigsten Felder:
 |---|---|
 | `apps` | Bundle-IDs, deren Mikrofon-Nutzung eine Aufnahme startet |
 | `tapScope` | `app` = nur die Call-App-Familie aufnehmen (Default), `global` = gesamtes Systemaudio |
-| `transcriber` / `groqApiKey` | `local` (whisper.cpp) oder `groq` (Cloud, schneller) |
+| `transcriber` / `groqApiKey` | `local` (whisper.cpp), `parakeet` (am schnellsten, `./install.sh --with-parakeet`) oder `groq` (Cloud) |
 | `summarizer` (+ `summarizerUrl/Model/ApiKey`) | `claude` (Claude Code CLI), `openai` (jede OpenAI-kompatible API inkl. Ollama/Groq/OpenRouter) oder `off` |
 | `noteSections` | welche Abschnitte die KI schreibt: Kurzfassung, Besprochen, To-dos, Follow-up-Mail |
 | `destinations` | zusätzliche Ablage: Apple Notes, Nextcloud (WebDAV), Notion |
