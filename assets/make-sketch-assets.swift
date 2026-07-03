@@ -346,29 +346,48 @@ func drawRotatedShot(_ url: URL, center: NSPoint, height: CGFloat, rotation: CGF
     NSGraphicsContext.current?.restoreGraphicsState()
 }
 
-let shotsDir = assetsDir.appendingPathComponent("shots")
-let cw: CGFloat = 1280, ch: CGFloat = 880
-srand48(99)
-let shotsImg = NSImage(size: NSSize(width: cw, height: ch), flipped: false) { _ in
-    bgDark.setFill()
-    NSRect(x: 0, y: 0, width: cw, height: ch).fill()
-
-    drawRotatedShot(shotsDir.appendingPathComponent("shot-settings.png"),
-                    center: NSPoint(x: 990, y: 420), height: 660, rotation: 2.2)
-    drawRotatedShot(shotsDir.appendingPathComponent("shot-call.png"),
-                    center: NSPoint(x: 300, y: 430), height: 640, rotation: -2.4)
-    drawRotatedShot(shotsDir.appendingPathComponent("shot-pending.png"),
-                    center: NSPoint(x: 648, y: 300), height: 430, rotation: -1.2)
-
-    handText("live level tracks while you talk", center: NSPoint(x: 250, y: 828), size: 27, color: indigo, rotation: -2)
-    sketchArrow(NSPoint(x: 300, y: 806), NSPoint(x: 320, y: 700), color: indigo, width: 2.6)
-
-    handText("match voices to names", center: NSPoint(x: 655, y: 610), size: 26, color: green, rotation: 1.5)
-    sketchArrow(NSPoint(x: 655, y: 588), NSPoint(x: 650, y: 500), color: green, width: 2.6)
-
-    handText("your AI · your storage · your language", center: NSPoint(x: 965, y: 830), size: 26, color: violet, rotation: 1.5)
-    sketchArrow(NSPoint(x: 990, y: 808), NSPoint(x: 985, y: 762), color: violet, width: 2.6)
-    return true
+struct ShotLabels {
+    let live: String
+    let match: String
+    let yours: String
 }
-savePNG(shotsImg, to: assetsDir.appendingPathComponent("screenshots.png"), w: 1280, h: 880)
-print("OK: assets/screenshots.png")
+
+func drawShotsCompose(suffix: String, labels: ShotLabels, out: String) {
+    let shotsDir = assetsDir.appendingPathComponent("shots")
+    let cw: CGFloat = 1280, ch: CGFloat = 880
+    srand48(99)
+    let img = NSImage(size: NSSize(width: cw, height: ch), flipped: false) { _ in
+        bgDark.setFill()
+        NSRect(x: 0, y: 0, width: cw, height: ch).fill()
+
+        drawRotatedShot(shotsDir.appendingPathComponent("shot-settings\(suffix).png"),
+                        center: NSPoint(x: 990, y: 420), height: 660, rotation: 2.2)
+        drawRotatedShot(shotsDir.appendingPathComponent("shot-call\(suffix).png"),
+                        center: NSPoint(x: 300, y: 430), height: 640, rotation: -2.4)
+        drawRotatedShot(shotsDir.appendingPathComponent("shot-pending\(suffix).png"),
+                        center: NSPoint(x: 648, y: 300), height: 430, rotation: -1.2)
+
+        handText(labels.live, center: NSPoint(x: 250, y: 828), size: 27, color: indigo, rotation: -2)
+        sketchArrow(NSPoint(x: 300, y: 806), NSPoint(x: 320, y: 700), color: indigo, width: 2.6)
+
+        handText(labels.match, center: NSPoint(x: 655, y: 610), size: 26, color: green, rotation: 1.5)
+        sketchArrow(NSPoint(x: 655, y: 588), NSPoint(x: 650, y: 500), color: green, width: 2.6)
+
+        handText(labels.yours, center: NSPoint(x: 965, y: 830), size: 26, color: violet, rotation: 1.5)
+        sketchArrow(NSPoint(x: 990, y: 808), NSPoint(x: 985, y: 762), color: violet, width: 2.6)
+        return true
+    }
+    savePNG(img, to: assetsDir.appendingPathComponent(out), w: 1280, h: 880)
+    print("OK: assets/\(out)")
+}
+
+drawShotsCompose(suffix: "",
+                 labels: ShotLabels(live: "live level tracks while you talk",
+                                    match: "match voices to names",
+                                    yours: "your AI · your storage · your language"),
+                 out: "screenshots.png")
+drawShotsCompose(suffix: ".de",
+                 labels: ShotLabels(live: "Live-Pegel, während du sprichst",
+                                    match: "Stimmen den Namen zuordnen",
+                                    yours: "deine KI · dein Speicher · deine Sprache"),
+                 out: "screenshots.de.png")

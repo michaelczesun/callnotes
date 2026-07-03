@@ -74,7 +74,7 @@ Alles sitzt in der Menüleiste (Telefon-Symbol):
 - **Deutsch & Englisch** — die App folgt automatisch deiner Systemsprache
 
 <p align="center">
-  <img src="assets/screenshots.png" alt="CallNotes Menüleisten-App — Live-Pegel, Sprecher-Zuordnung, Einstellungen" width="100%">
+  <img src="assets/screenshots.de.png" alt="CallNotes Menüleisten-App — Live-Pegel, Sprecher-Zuordnung, Einstellungen" width="100%">
 </p>
 
 ## Installation

@@ -164,8 +164,8 @@ final class Store: ObservableObject {
         ncUrl = ""; ncUser = ""; ncPass = ""
         notionToken = ""; notionParent = ""
         ntfyUrl = ""
-        lastNotes = ["2026-07-03-1042-call-anna-website-relaunch.md",
-                     "2026-07-02-1731-call-stefan-catering-offer.md"]
+        lastNotes = [L("2026-07-03-1042-anruf-anna-website-relaunch.md", "2026-07-03-1042-call-anna-website-relaunch.md"),
+                     L("2026-07-02-1731-anruf-stefan-catering-angebot.md", "2026-07-02-1731-call-stefan-catering-offer.md")]
         if mode == "call" {
             currentCall = CurrentCall(dir: "/tmp/callnotes-demo", appName: "WhatsApp",
                                       start: Date().addingTimeInterval(-222))
