@@ -10,6 +10,8 @@ import AppKit
 import AVFoundation
 
 let kConfigPath = NSString(string: "~/.config/callnotes/config.json").expandingTildeInPath
+let kAppVersion = "1.0.0"
+let kRepoURL = "https://github.com/michaelczesun/callnotes"
 
 func tilde(_ p: String) -> String {
     let home = NSHomeDirectory()
@@ -83,6 +85,7 @@ final class Store: ObservableObject {
     @Published var daemonRunning = false
     @Published var lastNotes: [String] = []
     @Published var failedCount = 0
+    @Published var updateAvailable: String? = nil
     @Published var currentCall: CurrentCall? = nil
     @Published var callElapsed = ""
     @Published var micLevels: [Double] = []
@@ -111,6 +114,9 @@ final class Store: ObservableObject {
         let t = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in self?.poll() }
         RunLoop.main.add(t, forMode: .common)
         timer = t
+        checkForUpdate()
+        let u = Timer(timeInterval: 6 * 3600, repeats: true) { [weak self] _ in self?.checkForUpdate() }
+        RunLoop.main.add(u, forMode: .common)
         if !setupDone {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                 guard let self, !self.setupDone else { return }
@@ -406,6 +412,22 @@ final class Store: ObservableObject {
             .filter { !$0.hasPrefix(".") }.count
     }
 
+    // Sanfter Update-Hinweis (kein Auto-Updater): neuestes GitHub-Release vergleichen
+    func checkForUpdate() {
+        guard let url = URL(string: "https://api.github.com/repos/michaelczesun/callnotes/releases/latest") else { return }
+        var req = URLRequest(url: url)
+        req.setValue("CallNotes/\(kAppVersion)", forHTTPHeaderField: "User-Agent")
+        URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
+            guard let d = data,
+                  let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                  let tag = obj["tag_name"] as? String else { return }
+            let latest = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+            DispatchQueue.main.async {
+                self?.updateAvailable = latest.compare(kAppVersion, options: .numeric) == .orderedDescending ? latest : nil
+            }
+        }.resume()
+    }
+
     // Fehlgeschlagene Verarbeitungen (Roh-Audio liegt in failed/) erneut anstossen
     func retryFailed() {
         let dir = baseDir + "/failed"
@@ -422,6 +444,16 @@ final class Store: ObservableObject {
             p.arguments = ["-c", "nohup /bin/bash '\(script)' '\(dir)/\(it)' >> '\(logFile)' 2>&1 &"]
             try? p.run()
         }
+    }
+
+    // Kaputte Aufnahmen endgueltig loeschen (z.B. leere Spuren — Retry bringt nichts)
+    func discardFailed() {
+        let dir = baseDir + "/failed"
+        for it in ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []) where !it.hasPrefix(".") {
+            try? FileManager.default.removeItem(atPath: dir + "/" + it)
+        }
+        status = "Fehlgeschlagene Aufnahmen verworfen."
+        refreshNotes()
     }
 
     func openNote(_ name: String) {
@@ -1247,10 +1279,29 @@ struct MenuPanelView: View {
                         Text("\(store.failedCount) Aufnahme\(store.failedCount == 1 ? "" : "n") nicht verarbeitet")
                             .font(.callout)
                         InfoTip(title: "Nicht verarbeitet",
-                                text: "Diese Anrufe wurden aufgenommen, aber die Verarbeitung schlug fehl (z. B. Whisper-Modell fehlte oder der Mac ging schlafen). Das Roh-Audio ist sicher — „Erneut versuchen\u{201C} startet die Verarbeitung nochmal.")
+                                text: "Diese Anrufe wurden aufgenommen, aber die Verarbeitung schlug fehl (z. B. Whisper-Modell fehlte, Absturz — oder die Aufnahme ist leer). „Erneut versuchen\u{201C} startet die Verarbeitung nochmal; schlägt sie wieder fehl, ist die Aufnahme vermutlich unbrauchbar → „Verwerfen\u{201C} löscht sie endgültig.")
                         Spacer()
+                        Button("Verwerfen") { store.discardFailed() }
+                            .buttonStyle(.plain).font(.caption).foregroundColor(.secondary)
+                            .padding(.vertical, 3).padding(.horizontal, 4)
+                            .hoverHighlight()
                         Button("Erneut versuchen") { store.retryFailed() }
                             .buttonStyle(.borderedProminent).tint(.orange).controlSize(.small)
+                    }
+                }
+            }
+
+            // Sanfter Update-Hinweis (neues GitHub-Release)
+            if let v = store.updateAvailable {
+                Card {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.down.circle.fill").foregroundColor(.indigo)
+                        Text("Version \(v) ist verfügbar").font(.callout)
+                        InfoTip(title: "Update",
+                                text: "Aktualisieren im Terminal: in den callnotes-Ordner wechseln, dann git pull && ./install.sh — deine Einstellungen bleiben erhalten.")
+                        Spacer()
+                        Button("Ansehen") { NSWorkspace.shared.open(URL(string: kRepoURL + "/releases/latest")!) }
+                            .controlSize(.small)
                     }
                 }
             }
