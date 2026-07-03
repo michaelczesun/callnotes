@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.png" alt="CallNotes — Calls become notes. Automatically." width="100%">
+  <img src="assets/banner.de.png" alt="CallNotes — aus Anrufen werden Notizen. Automatisch." width="100%">
 </p>
 
 <p align="center">
@@ -55,7 +55,7 @@ Eine fertige Markdown-Notiz, etwa eine Minute später:
 ## So funktioniert es
 
 <p align="center">
-  <img src="assets/how-it-works.png" alt="So funktioniert CallNotes — vom erkannten Anruf zur Markdown-Notiz" width="640">
+  <img src="assets/how-it-works.de.png" alt="So funktioniert CallNotes — vom erkannten Anruf zur Markdown-Notiz" width="640">
 </p>
 
 ## Die Menüleisten-App
