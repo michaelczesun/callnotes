@@ -17,6 +17,24 @@ JUNK = re.compile(
 )
 
 
+def collapse_repeats(text, min_words=4):
+    # Whisper wiederholt bei Stille am Segmentende gern dieselbe Phrase in Schleife
+    # ("… per WhatsApp an und ich rufe dann gleich später einen Kollegen per WhatsApp
+    # an und ich rufe …") — exakte Wiederholungen ab min_words Wörtern kollabieren.
+    words = text.split()
+    out = []
+    i = 0
+    while i < len(words):
+        out.append(words[i])
+        i += 1
+        for n in range(min(14, len(out)), min_words - 1, -1):
+            if out[-n:] == words[i:i + n]:
+                while out[-n:] == words[i:i + n]:
+                    i += n
+                break
+    return " ".join(out)
+
+
 def load(path, label):
     try:
         with open(path, encoding="utf-8") as f:
@@ -25,7 +43,7 @@ def load(path, label):
         return []
     segs = []
     for s in d.get("transcription", []):
-        text = (s.get("text") or "").strip()
+        text = collapse_repeats((s.get("text") or "").strip())
         if not text or JUNK.match(text):
             continue
         off = s.get("offsets") or {}
