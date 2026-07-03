@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>at.dasgeht.calltap</string>
+	<key>CFBundleName</key>
+	<string>calltap</string>
+	<key>CFBundleExecutable</key>
+	<string>calltap</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>CFBundleShortVersionString</key>
+	<string>1.2.0</string>
+	<key>CFBundleVersion</key>
+	<string>3</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>calltap nimmt bei Telefonaten dein Mikrofon auf, um automatisch eine Anruf-Notiz zu erstellen.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>calltap nimmt bei Telefonaten den Ton der Gegenseite (Systemaudio der Call-App) auf, um automatisch eine Anruf-Notiz zu erstellen.</string>
+</dict>
+</plist>

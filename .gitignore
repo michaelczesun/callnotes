@@ -1,0 +1,6 @@
+.DS_Store
+*.app
+*.caf
+*.m4a
+*.wav
+__pycache__/
