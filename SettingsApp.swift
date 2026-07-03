@@ -10,11 +10,17 @@ import AppKit
 import AVFoundation
 
 let kConfigPath = NSString(string: "~/.config/callnotes/config.json").expandingTildeInPath
-let kAppVersion = "1.1.0"
+let kAppVersion = "1.1.1"
 let kRepoURL = "https://github.com/michaelczesun/callnotes"
 
 let isGerman: Bool = {
     if let o = ProcessInfo.processInfo.environment["CALLNOTES_LANG"] { return o.hasPrefix("de") }
+    // In-App-Wahl aus der Config ("uiLanguage": "de" | "en" | "system")
+    if let data = try? Data(contentsOf: URL(fileURLWithPath: kConfigPath)),
+       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+       let lang = obj["uiLanguage"] as? String, lang == "de" || lang == "en" {
+        return lang == "de"
+    }
     return Locale.preferredLanguages.first?.hasPrefix("de") ?? false
 }()
 func L(_ de: String, _ en: String) -> String { isGerman ? de : en }
@@ -86,6 +92,7 @@ final class Store: ObservableObject {
     @Published var notionToken = ""
     @Published var notionParent = ""
     @Published var ntfyUrl = ""
+    @Published var uiLanguage = "system"
     // Laufzeit
     @Published var status = ""
     @Published var daemonRunning = false
@@ -205,6 +212,7 @@ final class Store: ObservableObject {
             notionToken = obj["notionToken"] as? String ?? ""
             notionParent = obj["notionParent"] as? String ?? ""
             ntfyUrl = obj["ntfyUrl"] as? String ?? ""
+            uiLanguage = obj["uiLanguage"] as? String ?? "system"
             setupDone = obj["setupDone"] as? Bool ?? false
             baseDir = untilde(obj["outDir"] as? String ?? "~/CallNotes")
             if let post = obj["postScript"] as? String {
@@ -235,6 +243,7 @@ final class Store: ObservableObject {
         raw["notionToken"] = notionToken
         raw["notionParent"] = notionParent
         raw["ntfyUrl"] = ntfyUrl
+        raw["uiLanguage"] = uiLanguage
         raw["setupDone"] = setupDone
         guard let d = try? JSONSerialization.data(withJSONObject: raw, options: [.prettyPrinted, .sortedKeys]) else { return false }
         let dir = (kConfigPath as NSString).deletingLastPathComponent
@@ -512,6 +521,24 @@ final class Store: ObservableObject {
         refreshNotes()
     }
 
+    // Sprachwechsel: speichern und — falls sich die effektive Sprache aendert —
+    // die App blitzschnell selbst neu starten (die Texte werden beim Start aufgeloest).
+    func applyLanguageChange() {
+        _ = persist()
+        let newIsGerman: Bool
+        switch uiLanguage {
+        case "de": newIsGerman = true
+        case "en": newIsGerman = false
+        default: newIsGerman = Locale.preferredLanguages.first?.hasPrefix("de") ?? false
+        }
+        guard newIsGerman != isGerman else { return }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        proc.arguments = ["-n", Bundle.main.bundlePath]
+        try? proc.run()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { NSApp.terminate(nil) }
+    }
+
     func openNote(_ name: String) {
         NSWorkspace.shared.open(URL(fileURLWithPath: untilde(notesDir) + "/" + name))
     }
@@ -784,6 +811,16 @@ struct WizardView: View {
                     }
                     Text(L("Du telefonierst — CallNotes macht den Rest.", "You take the call — CallNotes handles the rest."))
                         .font(.callout.weight(.medium))
+                }
+                HStack(spacing: 8) {
+                    Text(L("Sprache / Language:", "Language / Sprache:")).font(.caption).foregroundColor(.secondary)
+                    Picker("", selection: $store.uiLanguage) {
+                        Text("System").tag("system")
+                        Text("Deutsch").tag("de")
+                        Text("English").tag("en")
+                    }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 240)
+                    .onChange(of: store.uiLanguage) { _ in store.applyLanguageChange() }
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Label(L("Erkennt Anrufe automatisch und nimmt beide Seiten getrennt auf", "Detects calls automatically and records both sides separately"), systemImage: "waveform.badge.mic")
@@ -1127,7 +1164,20 @@ struct SettingsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(L("SPEICHERORTE", "STORAGE LOCATIONS")).font(.caption2.weight(.bold)).foregroundColor(.secondary)
+            HStack(spacing: 3) {
+                Text(L("SPRACHE", "LANGUAGE")).font(.caption2.weight(.bold)).foregroundColor(.secondary)
+                InfoTip(title: L("Sprache", "Language"),
+                        text: L("System folgt deiner macOS-Sprache. Beim Wechsel startet die App kurz neu — Einstellungen bleiben erhalten.", "System follows your macOS language. Switching restarts the app briefly — settings are preserved."))
+            }
+            Picker("", selection: $store.uiLanguage) {
+                Text("System").tag("system")
+                Text("Deutsch").tag("de")
+                Text("English").tag("en")
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            .onChange(of: store.uiLanguage) { _ in store.applyLanguageChange() }
+
+            Text(L("SPEICHERORTE", "STORAGE LOCATIONS")).font(.caption2.weight(.bold)).foregroundColor(.secondary).padding(.top, 4)
             PathRow(label: L("Notizen", "Notes"), path: $store.notesDir,
                     info: L("Zielordner der fertigen Markdown-Notizen. Ideal: dein Obsidian-Vault — dann sind Anrufe sofort verlinkbar.", "Destination folder for the finished markdown notes. Ideal: your Obsidian vault — then calls are instantly linkable."))
             PathRow(label: L("Audio-Archiv", "Audio archive"), path: $store.audioDir,

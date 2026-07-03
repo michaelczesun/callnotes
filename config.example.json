@@ -1,6 +1,5 @@
 {
   "_hinweis": "Nach ~/.config/callnotes/config.json kopieren (macht install.sh automatisch). Bundle-IDs neuer Call-Apps findest du mit: calltap procs --watch (waehrend eines Anrufs) oder im Log ~/CallNotes/log/callwatch.log.",
-
   "apps": [
     "com.apple.TelephonyUtilities",
     "com.apple.avconferenced",
@@ -17,12 +16,10 @@
   "stopGraceSeconds": 6,
   "maxHours": 4,
   "tapScope": "app",
-
   "outDir": "~/CallNotes",
   "notesDir": "~/CallNotes/notes",
   "audioDir": "~/CallNotes/audio",
   "mirrorDir": "",
-
   "whisperModel": "~/models/ggml-large-v3-turbo-q5_0.bin",
   "language": "de",
   "diarize": true,
@@ -37,6 +34,6 @@
   "context": "",
   "notesMoc": true,
   "ntfyUrl": "",
-
-  "postScript": "WIRD_VON_INSTALL_SH_GESETZT"
+  "postScript": "WIRD_VON_INSTALL_SH_GESETZT",
+  "uiLanguage": "system"
 }
