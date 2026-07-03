@@ -19,12 +19,11 @@ note = d.get("note", "")
 if not os.path.exists(note):
     sys.exit(f"Notiz fehlt: {note}")
 
+import re as _re
+# robust gegen Semikolons in Namen: Segmente laufen bis zum naechsten "Sprecher N="
 pairs = []
-for part in (mapping or "").split(";"):
-    if "=" not in part:
-        continue
-    k, v = part.split("=", 1)
-    k, v = k.strip(), v.strip()
+for m in _re.finditer(r"(Sprecher \d+)\s*=\s*([^;]*(?:;(?!\s*Sprecher \d+\s*=)[^;]*)*)", mapping or ""):
+    k, v = m.group(1).strip(), m.group(2).strip().rstrip(";").strip()
     if k and v and v != "?" and v != k:
         pairs.append((k, v))
 

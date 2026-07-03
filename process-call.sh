@@ -83,9 +83,9 @@ fail() {
   say "FEHLER: $1"
   phase_done
   mkdir -p "$BASE/failed"
-  [ -d "$REC" ] && mv "$REC" "$BASE/failed/" 2>/dev/null
+  case "$REC" in "$BASE/failed/"*) : ;; *) [ -d "$REC" ] && mv "$REC" "$BASE/failed/" 2>/dev/null ;; esac
   ntfy "Anruf-Verarbeitung fehlgeschlagen: $1 — Audio liegt in $BASE/failed/$(basename "$REC")" "Anruf-Notiz FEHLER"
-  rmdir "$LOCK" 2>/dev/null
+  rm -rf "${LOCK:-}" 2>/dev/null
   exit 1
 }
 
@@ -94,14 +94,20 @@ if [ "$TRANSCRIBER" != "groq" ] || [ -z "$GROQ_KEY" ]; then
   [ -n "$MODEL" ] && [ -f "$MODEL" ] || fail "Whisper-Modell fehlt (config 'whisperModel'): ${MODEL:-nicht gesetzt}"
 fi
 
-# Lock: nur eine Verarbeitung gleichzeitig (whisper + claude sind RAM-/CPU-hungrig)
+# Lock: nur eine Verarbeitung gleichzeitig (whisper + claude sind RAM-/CPU-hungrig).
+# PID-basiert: lebt der Halter noch, wird beliebig lange gewartet (lange Calls!);
+# nur ein toter Halter (Absturz/Kill) wird uebernommen.
 LOCK="$BASE/.process.lock"
-waited=0
 until mkdir "$LOCK" 2>/dev/null; do
-  sleep 15; waited=$((waited+15))
-  [ $waited -ge 1800 ] && { say "Lock seit 30min belegt, raeume auf"; rm -rf "$LOCK"; }
+  HOLDER=$(cat "$LOCK/pid" 2>/dev/null || echo "")
+  if [ -z "$HOLDER" ] || ! kill -0 "$HOLDER" 2>/dev/null; then
+    say "Lock-Halter (${HOLDER:-unbekannt}) lebt nicht mehr — uebernehme"
+    rm -rf "$LOCK"
+  fi
+  sleep 10
 done
-trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+echo $$ > "$LOCK/pid"
+trap 'rm -rf "$LOCK" 2>/dev/null' EXIT
 
 say "Verarbeite $REC"
 
@@ -112,7 +118,8 @@ if [ -f "$META" ]; then
   APP=$(python3 -c "import json;print(json.load(open('$META')).get('appName','unbekannt'))" 2>/dev/null || echo unbekannt)
   DUR=$(python3 -c "import json;print(json.load(open('$META')).get('durationSec',0))" 2>/dev/null || echo 0)
 fi
-STAMP="$(basename "$REC" | cut -c1-15)"   # yyyy-MM-dd_HHmm
+# yyyy-MM-dd_HHmmss (neue Aufnahmen) bzw. yyyy-MM-dd_HHmm (alte) — beides matchen
+STAMP="$(basename "$REC" | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4,6}' || basename "$REC" | cut -c1-15)"
 DATE_PART="${STAMP:0:10}"
 TIME_PART="${STAMP:11:4}"
 [ ${#DATE_PART} -eq 10 ] || DATE_PART=$(date +%Y-%m-%d)
@@ -314,6 +321,12 @@ SLUG=$(echo "$TITLE" | sed -E 's/—.*$//; s/ä/ae/g; s/ö/oe/g; s/ü/ue/g; s/Ä
   | sed -E 's/telefonat//; s/unbekannt//; s/[^a-z0-9]+/-/g; s/^-+|-+$//g; s/-+/-/g' | cut -c1-40 | sed 's/-$//')
 [ -n "$SLUG" ] || SLUG="$APP"
 NOTE="$NOTES_DIR/${DATE_PART}-${TIME_PART}-anruf-${SLUG}.md"
+# nie eine bestehende Notiz ueberschreiben (zweiter Anruf in derselben Minute)
+n=2
+while [ -e "$NOTE" ]; do
+  NOTE="$NOTES_DIR/${DATE_PART}-${TIME_PART}-anruf-${SLUG}-$n.md"
+  n=$((n+1))
+done
 M4A_NAME="${STAMP}_${APP}.m4a"
 
 {

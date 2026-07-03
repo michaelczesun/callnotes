@@ -31,6 +31,7 @@ if [ ! -f "$CFG" ]; then
   cp config.example.json "$CFG"
   echo "Config angelegt: $CFG (Speicherorte aendern: CallNotes.app oder direkt editieren)"
 fi
+chmod 600 "$CFG" 2>/dev/null || true
 python3 - "$CFG" "$REPO/process-call.sh" <<'PY'
 import json, sys
 cfg, post = sys.argv[1:3]

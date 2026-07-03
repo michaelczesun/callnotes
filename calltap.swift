@@ -1,4 +1,4 @@
-// calltap v1.3.0 — Telefonat-Recorder fuer macOS 14.2+ (Core-Audio Process Tap)
+// calltap v1.4.0 — Telefonat-Recorder fuer macOS 14.2+ (Core-Audio Process Tap)
 //
 // Nimmt bei Anrufen ZWEI getrennte Spuren auf:
 //   mic.caf    = Mikrofon (du)
@@ -154,8 +154,13 @@ final class SystemAudioRecorder {
             throw CalltapError("Tap-Format nicht lesbar")
         }
         format = fmt
-        file = try AVAudioFile(forWriting: outURL, settings: fmt.settings,
-                               commonFormat: .pcmFormatFloat32, interleaved: fmt.isInterleaved)
+        do {
+            file = try AVAudioFile(forWriting: outURL, settings: fmt.settings,
+                                   commonFormat: .pcmFormatFloat32, interleaved: fmt.isInterleaved)
+        } catch {
+            stop() // sonst leakt der bereits erstellte Tap in coreaudiod (z.B. Platte voll)
+            throw error
+        }
 
         // Tap-UID lesen (Fallback: UUID der Description)
         var tapUID = desc.uuid.uuidString
@@ -461,8 +466,9 @@ func shortName(_ bundle: String, pid: pid_t) -> String {
 }
 
 func dirStamp(_ date: Date) -> String {
+    // sekundengenau — zwei Anrufe in derselben Minute duerfen nicht kollidieren
     let f = DateFormatter()
-    f.dateFormat = "yyyy-MM-dd_HHmm"
+    f.dateFormat = "yyyy-MM-dd_HHmmss"
     return f.string(from: date)
 }
 
@@ -572,6 +578,17 @@ func cmdWatch(configPath: String) {
     try? FileManager.default.createDirectory(at: recBase, withIntermediateDirectories: true)
     try? FileManager.default.createDirectory(at: stateDir.appendingPathComponent("pending"), withIntermediateDirectories: true)
     try? FileManager.default.removeItem(at: currentCallFile) // Reste eines Absturzes
+    // Verwaiste Aufnahmen eines Absturzes (rec-dir ohne meta.json) nach failed/
+    // verschieben — dort macht die Menueleisten-App sie sichtbar (Erneut versuchen).
+    let failedDir = base.appendingPathComponent("failed")
+    try? FileManager.default.createDirectory(at: failedDir, withIntermediateDirectories: true)
+    for entry in (try? FileManager.default.contentsOfDirectory(at: recBase, includingPropertiesForKeys: nil)) ?? [] {
+        guard entry.hasDirectoryPath,
+              !FileManager.default.fileExists(atPath: entry.appendingPathComponent("meta.json").path) else { continue }
+        try? FileManager.default.removeItem(at: entry.appendingPathComponent("levels.json"))
+        try? FileManager.default.moveItem(at: entry, to: failedDir.appendingPathComponent(entry.lastPathComponent))
+        log("Verwaiste Aufnahme nach Absturz -> failed/: \(entry.lastPathComponent)")
+    }
     let post = expand(cfg.postScript)
     log("callwatch gestartet. Apps: \(cfg.apps.joined(separator: ", ")) | min \(cfg.minSeconds)s | Stopp nach \(cfg.stopGraceSeconds)s Stille | Ausgabe \(base.path)")
 
@@ -660,7 +677,9 @@ func cmdWatch(configPath: String) {
         _ = s.stopAndFinalize()
         session = nil
         silentSince = nil
-        suppressBundle = s.appBundle.isEmpty ? s.appName : s.appBundle
+        // generischer Fallback-Name "app" wuerde spaeter FREMDE Prozesse mit-unterdruecken
+        let key = s.appBundle.isEmpty ? s.appName : s.appBundle
+        suppressBundle = key == "app" ? nil : key
         suppressIdleSince = nil
         try? FileManager.default.removeItem(at: currentCallFile)
         try? FileManager.default.removeItem(at: s.dir)
@@ -757,7 +776,7 @@ func cmdWatch(configPath: String) {
 
 func usage() -> Never {
     print("""
-    calltap v1.3.0 — Telefonat-Recorder (2 Spuren: Mikro + Systemaudio der Call-App)
+    calltap v1.4.0 — Telefonat-Recorder (2 Spuren: Mikro + Systemaudio der Call-App)
 
     Nutzung:
       calltap procs [--watch]                     Audio-Prozesse (wer nutzt das Mikro?)

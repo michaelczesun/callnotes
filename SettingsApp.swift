@@ -1,4 +1,4 @@
-// CallNotes.app v2.4.0 — Menueleisten-App fuer den Anruf-Autopiloten (calltap)
+// CallNotes.app v2.4.1 — Menueleisten-App fuer den Anruf-Autopiloten (calltap)
 // - Live-Pegel beider Spuren waehrend des Anrufs (du + Gegenseite)
 // - Popup bei Anruf-Erkennung: Teilnehmer-Namen (mehrere)
 // - Verarbeitungs-Status (Transkription/Diarisierung/KI) nach dem Auflegen
@@ -82,6 +82,7 @@ final class Store: ObservableObject {
     @Published var status = ""
     @Published var daemonRunning = false
     @Published var lastNotes: [String] = []
+    @Published var failedCount = 0
     @Published var currentCall: CurrentCall? = nil
     @Published var callElapsed = ""
     @Published var micLevels: [Double] = []
@@ -106,7 +107,10 @@ final class Store: ObservableObject {
     init() {
         load()
         poll()
-        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in self?.poll() }
+        // .common-Mode: weiterlaufen, auch wenn ein Menue/Drag die RunLoop im Tracking haelt
+        let t = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in self?.poll() }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
         if !setupDone {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                 guard let self, !self.setupDone else { return }
@@ -174,8 +178,11 @@ final class Store: ObservableObject {
         let dir = (kConfigPath as NSString).deletingLastPathComponent
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         do {
-            try d.write(to: URL(fileURLWithPath: kConfigPath))
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: kConfigPath)
+            // atomar schreiben — der Daemon/die Pipeline darf nie eine halbe JSON sehen
+            let tmp = URL(fileURLWithPath: kConfigPath + ".tmp")
+            try d.write(to: tmp)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tmp.path)
+            _ = try FileManager.default.replaceItemAt(URL(fileURLWithPath: kConfigPath), withItemAt: tmp)
             return true
         } catch { return false }
     }
@@ -219,6 +226,20 @@ final class Store: ObservableObject {
             }
             return
         }
+        // Daemon tot/haengend? levels.json wird sonst alle 0,35s erneuert — bleibt sie
+        // laenger stehen, ist die "laufende Aufnahme" eine Leiche und wird ignoriert.
+        let levelsPath = dir + "/levels.json"
+        if let lAttrs = try? FileManager.default.attributesOfItem(atPath: levelsPath),
+           let lMod = lAttrs[.modificationDate] as? Date,
+           Date().timeIntervalSince(lMod) > 20 {
+            if currentCall != nil {
+                currentCall = nil
+                callElapsed = ""
+                stopLevelTimer()
+                CallPopupPanel.shared.hide()
+            }
+            return
+        }
         let start = ISO8601DateFormatter().date(from: obj["start"] as? String ?? "") ?? Date()
         let call = CurrentCall(dir: dir, appName: obj["appName"] as? String ?? "?", start: start)
         if currentCall != call {
@@ -237,7 +258,7 @@ final class Store: ObservableObject {
 
     private func startLevelTimer() {
         guard levelTimer == nil else { return }
-        levelTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
+        let t = Timer(timeInterval: 0.35, repeats: true) { [weak self] _ in
             guard let self, let call = self.currentCall else { return }
             let f = call.dir + "/levels.json"
             guard let data = try? Data(contentsOf: URL(fileURLWithPath: f)),
@@ -247,6 +268,8 @@ final class Store: ObservableObject {
             if self.micLevels.count > 42 { self.micLevels.removeFirst(self.micLevels.count - 42) }
             if self.sysLevels.count > 42 { self.sysLevels.removeFirst(self.sysLevels.count - 42) }
         }
+        RunLoop.main.add(t, forMode: .common)
+        levelTimer = t
     }
 
     private func stopLevelTimer() {
@@ -256,6 +279,16 @@ final class Store: ObservableObject {
 
     private func pollProcessing() {
         let f = baseDir + "/state/processing.json"
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: f) else {
+            processingPhase = nil
+            return
+        }
+        // Leiche nach Absturz/Kill: jede echte Phase erneuert die Datei deutlich schneller
+        if let mod = attrs[.modificationDate] as? Date, Date().timeIntervalSince(mod) > 3600 {
+            try? FileManager.default.removeItem(atPath: f)
+            processingPhase = nil
+            return
+        }
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: f)),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             processingPhase = nil
@@ -323,6 +356,7 @@ final class Store: ObservableObject {
     func playClip(_ path: String) {
         player?.stop()
         player = try? AVAudioPlayer(contentsOf: URL(fileURLWithPath: path))
+        if player == nil { status = "Hörprobe nicht mehr verfügbar." }
         player?.play()
     }
 
@@ -341,6 +375,7 @@ final class Store: ObservableObject {
             var name = picks[k] ?? kKeep
             if name == kCustom { name = (customNames[k] ?? "").trimmingCharacters(in: .whitespaces) }
             if name.isEmpty || name == kKeep { continue }
+            name = name.replacingOccurrences(of: ";", with: ",") // Trennzeichen des Mappings
             parts.append("\(s.label)=\(name)")
         }
         let script = scriptDir + "/apply-speakers.sh"
@@ -367,6 +402,26 @@ final class Store: ObservableObject {
         let files = ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? [])
             .filter { $0.hasSuffix(".md") && $0 != "anrufe-moc.md" }.sorted().suffix(4)
         lastNotes = Array(files.reversed())
+        failedCount = ((try? FileManager.default.contentsOfDirectory(atPath: baseDir + "/failed")) ?? [])
+            .filter { !$0.hasPrefix(".") }.count
+    }
+
+    // Fehlgeschlagene Verarbeitungen (Roh-Audio liegt in failed/) erneut anstossen
+    func retryFailed() {
+        let dir = baseDir + "/failed"
+        let items = ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? [])
+            .filter { !$0.hasPrefix(".") }
+        guard !items.isEmpty else { return }
+        let script = scriptDir + "/process-call.sh"
+        guard FileManager.default.fileExists(atPath: script) else { status = "process-call.sh fehlt"; return }
+        status = "Nachverarbeitung von \(items.count) Aufnahme(n) gestartet …"
+        let logFile = baseDir + "/log/process.log"
+        for it in items {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/bash")
+            p.arguments = ["-c", "nohup /bin/bash '\(script)' '\(dir)/\(it)' >> '\(logFile)' 2>&1 &"]
+            try? p.run()
+        }
     }
 
     func openNote(_ name: String) {
@@ -823,7 +878,9 @@ struct ParticipantFieldsView: View {
                     .textFieldStyle(.roundedBorder)
                     .focused($focusedIndex, equals: i)
                     if store.participantFields.count > 1 {
-                        Button { store.participantFields.remove(at: i) } label: { Image(systemName: "minus.circle.fill").foregroundColor(.secondary) }
+                        Button {
+                            if i < store.participantFields.count { store.participantFields.remove(at: i) }
+                        } label: { Image(systemName: "minus.circle.fill").foregroundColor(.secondary) }
                             .buttonStyle(.plain)
                     }
                 }
@@ -1180,6 +1237,22 @@ struct MenuPanelView: View {
             // Sprecher-Zuordnung
             if !store.pendings.isEmpty {
                 ForEach(store.pendings) { p in PendingView(p: p) }
+            }
+
+            // Fehlgeschlagene Verarbeitungen: sichtbar machen statt still liegen lassen
+            if store.failedCount > 0 {
+                Card {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                        Text("\(store.failedCount) Aufnahme\(store.failedCount == 1 ? "" : "n") nicht verarbeitet")
+                            .font(.callout)
+                        InfoTip(title: "Nicht verarbeitet",
+                                text: "Diese Anrufe wurden aufgenommen, aber die Verarbeitung schlug fehl (z. B. Whisper-Modell fehlte oder der Mac ging schlafen). Das Roh-Audio ist sicher — „Erneut versuchen\u{201C} startet die Verarbeitung nochmal.")
+                        Spacer()
+                        Button("Erneut versuchen") { store.retryFailed() }
+                            .buttonStyle(.borderedProminent).tint(.orange).controlSize(.small)
+                    }
+                }
             }
 
             // Leerzustand: noch nichts passiert
