@@ -109,6 +109,15 @@ Systemeinstellungen → Datenschutz & Sicherheit → *Mikrofon* bzw.
 Danach: **Testanruf machen** (länger als 20 Sekunden). Fortschritt bei Bedarf in
 `~/CallNotes/log/process.log`.
 
+## Deinstallation
+
+```bash
+./uninstall.sh          # entfernt Dienste + Apps; Notizen, Config & Modelle bleiben
+./uninstall.sh --purge  # entfernt zusätzlich Arbeitsdaten, Config, venv und Modelle
+```
+
+Dein Notizen-Ordner wird nie angetastet.
+
 ## Unterstützte Call-Apps
 
 FaceTime, iPhone-Anrufe via Continuity, WhatsApp, Zoom, Teams, Signal, Telegram,

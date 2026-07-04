@@ -102,6 +102,15 @@ Privacy & Security → *Microphone* / *Screen & System Audio Recording* → call
 
 Then make a test call (>20 s). Watch `~/CallNotes/log/process.log` if you're curious.
 
+## Uninstall
+
+```bash
+./uninstall.sh          # removes daemons + apps; keeps notes, config & models
+./uninstall.sh --purge  # also removes working data, config, venv and models
+```
+
+Your notes folder is never touched.
+
 ## Supported call apps
 
 FaceTime, iPhone calls via Continuity, WhatsApp, Zoom, Teams, Signal, Telegram,

@@ -10,7 +10,7 @@ import AppKit
 import AVFoundation
 
 let kConfigPath = NSString(string: "~/.config/callnotes/config.json").expandingTildeInPath
-let kAppVersion = "1.2.1"
+let kAppVersion = "1.2.2"
 let kRepoURL = "https://github.com/michaelczesun/callnotes"
 
 let isGerman: Bool = {
@@ -1578,6 +1578,9 @@ final class StandalonePanel {
             .background(Color(nsColor: .underPageBackgroundColor))
             MenuPanelView(unlimited: true).environmentObject(store)
         }
+        // ScrollView hat keine intrinsische Hoehe — ohne festen Frame kollabiert
+        // das Fenster auf die Kopfzeile (Tester-/Michael-Screenshot 4.7.)
+        .frame(width: 400, height: 660)
         let hc = NSHostingController(rootView: root)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 640),
                          styleMask: [.titled, .closable, .miniaturizable],
