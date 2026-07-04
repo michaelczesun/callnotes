@@ -171,6 +171,12 @@ bash callnotes-sync.sh      # Notizen + Audio auf die externe Platte spiegeln
 
 ## Wenn etwas hakt
 
+- **Der Freigaben-Button ist grün, aber calltap fehlt in der Liste
+  „Bildschirm- & Systemaudioaufnahme":** Alles gut — auf neueren macOS-Versionen
+  erscheinen Tap-Apps stattdessen unter **„Nur Systemaudio-Aufnahme"** oder
+  trotz erteilter Freigabe gar nicht in den Listen. Die Wahrheit steht im
+  Daemon-Log: `grep "Self-Test" ~/CallNotes/log/callwatch.log` —
+  „Systemaudio-Tap ok" heißt: Aufnahme funktioniert.
 - **Der Systemaudio-Dialog erscheint nie (Mikrofon-Dialog kommt) — und andere
   Tap-Tools scheitern auf deinem Mac genauso:** Das ist ein Problem der
   Maschine, nicht der App. Am häufigsten auf **firmenverwalteten Macs**: Ein

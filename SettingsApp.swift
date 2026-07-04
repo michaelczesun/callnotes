@@ -872,7 +872,7 @@ struct WizardView: View {
                             permBusy = false
                             permOk = ok
                             permResult = ok
-                                ? L("Beide Freigaben aktiv — calltap erscheint jetzt auch in den Systemeinstellungen.", "Both permissions active — calltap now also appears in System Settings.")
+                                ? L("Beide Freigaben aktiv — Aufnahme funktioniert. (Ob calltap in den Systemeinstellungs-Listen auftaucht, ist je nach macOS-Version unterschiedlich — dieser grüne Haken zählt.)", "Both permissions active — recording works. (Whether calltap shows up in the System Settings lists varies by macOS version — this green check is what counts.)")
                                 : L("Noch nicht vollständig: eben erschienene macOS-Dialoge erlauben bzw. calltap in beiden Listen aktivieren — dann erneut prüfen.", "Not complete yet: allow the macOS dialogs that just appeared, or enable calltap in both lists — then check again.")
                         }
                     }

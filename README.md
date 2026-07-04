@@ -165,6 +165,12 @@ bash callnotes-sync.sh      # mirror notes + audio to the external drive
 
 ## Troubleshooting
 
+- **The permission button shows green but calltap is missing from the
+  "Screen & System Audio Recording" list:** that's fine — on newer macOS
+  versions tap-based apps may appear under **"System Audio Recording Only"**
+  instead, or not be listed at all despite being granted. The source of truth is
+  the daemon log: `grep "Self-Test" ~/CallNotes/log/callwatch.log` — "Systemaudio-Tap ok"
+  means recording works.
 - **The system-audio dialog never appears (mic dialog works) — and other
   tap-based tools fail on your Mac too:** that's a machine-level issue, not this
   app. Most common on **company-managed Macs**: an MDM/PPPC profile can block
