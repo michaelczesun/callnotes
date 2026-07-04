@@ -10,7 +10,7 @@ import AppKit
 import AVFoundation
 
 let kConfigPath = NSString(string: "~/.config/callnotes/config.json").expandingTildeInPath
-let kAppVersion = "1.2.0"
+let kAppVersion = "1.2.1"
 let kRepoURL = "https://github.com/michaelczesun/callnotes"
 
 let isGerman: Bool = {
@@ -109,6 +109,7 @@ final class Store: ObservableObject {
     @Published var pendings: [PendingCall] = []
     @Published var picks: [String: String] = [:]
     @Published var customNames: [String: String] = [:]
+    static weak var shared: Store?
     var setupDone = true
 
     private var raw: [String: Any] = [:]
@@ -134,6 +135,7 @@ final class Store: ObservableObject {
         checkForUpdate()
         let u = Timer(timeInterval: 6 * 3600, repeats: true) { [weak self] _ in self?.checkForUpdate() }
         RunLoop.main.add(u, forMode: .common)
+        Store.shared = self
         if !setupDone {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                 guard let self, !self.setupDone else { return }
@@ -709,6 +711,9 @@ struct HelpView: View {
                     Text(L("EINSTELLUNGEN ERKLÄRT", "SETTINGS EXPLAINED")).font(.caption2.weight(.bold)).foregroundColor(.secondary)
                     HelpTopic(icon: "folder", title: L("Speicherorte", "Storage locations"),
                               body_: L("**Notizen**: Zielordner der fertigen .md-Notizen — ideal ist dein Obsidian-Vault. **Audio-Archiv**: die m4a-Dateien. **Kopie (extern)**: optionaler Spiegel z. B. auf der externen Platte; wird nach jedem Anruf synchronisiert, verpasste Syncs werden automatisch nachgeholt.", "**Notes**: destination folder for the finished .md notes — your Obsidian vault is ideal. **Audio archive**: the m4a files. **Mirror (external)**: an optional copy, e.g. on an external drive; synced after every call, and missed syncs are caught up automatically."))
+                    HelpTopic(icon: "phone.arrow.down.left", title: L("Warum kommt kein Popup?", "Why is there no popup?"),
+                              body_: L("Das Popup erscheint erst, wenn ein Anruf WIRKLICH läuft — die Call-App also dein Mikrofon nutzt. Teams/WhatsApp nur zu öffnen genügt nicht. Test: Ruf jemanden an — das Menüleisten-Symbol wird aktiv und das Popup öffnet sich. Kommt es trotzdem nicht: Der Punkt oben rechts im Panel muss GRÜN sein (sonst ./install.sh erneut ausführen), und die App muss in den Einstellungen unter Apps stehen.",
+                                        "The popup only appears once a call is REALLY running — i.e. the call app is using your microphone. Just opening Teams/WhatsApp is not enough. Test: call someone — the menu bar icon becomes active and the popup opens. If it still doesn't: the dot in the panel's top right must be GREEN (otherwise re-run ./install.sh), and the app must be listed under Apps in settings."))
                     HelpTopic(icon: "cpu", title: L("Transkription: Whisper, Parakeet oder Groq", "Transcription: Whisper, Parakeet or Groq"),
                               body_: L("**Whisper** läuft komplett offline auf deinem Mac (privat, bewährt). **Parakeet** (NVIDIA TDT v3) läuft ebenfalls lokal, ist die schnellste Option und kennt keine Whisper-Wiederholungsschleifen — 25 europäische Sprachen; einmalig ~700 MB laden: `./install.sh --with-parakeet`. **Groq** ist eine Cloud-API und bei langen Gesprächen sehr schnell — dafür verlässt das Audio deinen Mac (Key gratis auf console.groq.com).", "**Whisper** runs entirely offline on your Mac (private, proven). **Parakeet** (NVIDIA TDT v3) also runs locally, is the fastest option and has no Whisper-style repetition loops — 25 European languages; one-time ~700 MB download: `./install.sh --with-parakeet`. **Groq** is a cloud API, very fast for long calls — but the audio leaves your Mac (free key at console.groq.com)."))
                     HelpTopic(icon: "brain", title: L("KI-Zusammenfassung: deine Wahl", "AI summary: your choice"),
@@ -768,6 +773,7 @@ final class SetupWizard {
         w.center()
         w.isReleasedWhenClosed = false
         w.makeKeyAndOrderFront(nil)
+        w.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
         window = w
     }
@@ -1380,6 +1386,25 @@ struct MenuPanelView: View {
                 }
             }
 
+            // Leerlauf: Erstnutzern erklaeren, WANN etwas passiert (Popup kommt
+            // erst im laufenden Anruf, nicht schon beim Oeffnen der Call-App)
+            if store.currentCall == nil && store.processingPhase == nil && store.pendings.isEmpty {
+                Card {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: safeSymbol(["waveform.badge.magnifyingglass", "waveform"]))
+                            .foregroundColor(.secondary)
+                        Text(store.daemonRunning
+                             ? L("Bereit. Sobald in einer Call-App wirklich ein Anruf läuft (Mikrofon aktiv), startet die Aufnahme von selbst und ein Popup erscheint. Die App nur zu öffnen reicht nicht.",
+                                 "Ready. As soon as a call is actually running in a call app (microphone active), recording starts by itself and a popup appears. Just opening the app is not enough.")
+                             : L("Der Aufnahme-Dienst läuft nicht. Einmal ./install.sh im Repo ausführen oder den Mac neu starten.",
+                                 "The recording service is not running. Run ./install.sh in the repo once, or restart your Mac."))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
             // Sprecher-Zuordnung
             if !store.pendings.isEmpty {
                 ForEach(store.pendings) { p in PendingView(p: p) }
@@ -1525,10 +1550,54 @@ final class ShowcaseWindow {
     }
 }
 
+// Doppelklick im Finder auf die laufende Menueleisten-App: statt "nichts passiert"
+// das Panel als normales Fenster zeigen (Tester-Feedback: "App laesst sich nicht oeffnen").
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        if let s = Store.shared { StandalonePanel.shared.show(store: s) }
+        return false
+    }
+}
+
+final class StandalonePanel {
+    static let shared = StandalonePanel()
+    private var window: NSWindow?
+
+    func show(store: Store) {
+        if let w = window { w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
+        let root = VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: safeSymbol(["menubar.arrow.up.rectangle", "arrow.up.right.circle"]))
+                Text(L("CallNotes wohnt oben in der Menüleiste (Telefon-Symbol) — dieses Fenster zeigt dieselbe Ansicht.",
+                       "CallNotes lives in the menu bar (phone icon, top right) — this window shows the same view."))
+                    .font(.caption)
+            }
+            .foregroundColor(.secondary)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity)
+            .background(Color(nsColor: .underPageBackgroundColor))
+            MenuPanelView(unlimited: true).environmentObject(store)
+        }
+        let hc = NSHostingController(rootView: root)
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 640),
+                         styleMask: [.titled, .closable, .miniaturizable],
+                         backing: .buffered, defer: false)
+        w.title = "CallNotes"
+        w.contentViewController = hc
+        w.center()
+        w.isReleasedWhenClosed = false
+        w.makeKeyAndOrderFront(nil)
+        w.orderFrontRegardless()
+        NSApp.activate(ignoringOtherApps: true)
+        window = w
+    }
+}
+
 // MARK: - App
 
 @main
 struct CallNotesApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var store = Store(showcase: ProcessInfo.processInfo.environment["CALLNOTES_SHOWCASE"])
 
     var body: some Scene {

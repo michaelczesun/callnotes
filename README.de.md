@@ -184,6 +184,18 @@ lokal; heruntergeladen werden nur die Whisper- und Diarisierungs-Modelle.
 </details>
 
 <details>
+<summary><b>Ich habe Teams/WhatsApp geöffnet und nichts ist passiert?</b></summary>
+<br>
+
+Das ist so gedacht: Popup und Aufnahme starten, wenn ein Anruf <b>wirklich
+läuft</b> (die App dein Mikrofon nutzt) — nicht schon beim Öffnen der App. Ruf
+jemanden an und beobachte das Menüleisten-Symbol. Außerdem: CallNotes ist eine
+<b>Menüleisten-App</b> (Telefon-Symbol oben rechts) — seit 1.2.1 öffnet ein
+Doppelklick im Finder das Panel als Fenster, und das Panel zeigt dir, ob der
+Aufnahme-Dienst läuft (grüner Punkt).
+</details>
+
+<details>
 <summary><b>Welche Telefonie-Apps werden unterstützt?</b></summary>
 <br>
 

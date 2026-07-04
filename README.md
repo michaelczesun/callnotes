@@ -175,6 +175,18 @@ in seconds; nothing is downloaded except the Whisper and diarization models.
 </details>
 
 <details>
+<summary><b>I opened Teams/WhatsApp and nothing happened?</b></summary>
+<br>
+
+That's expected: the popup and the recording start when a call is <b>actually
+running</b> (the app is using your microphone) — not when you merely open the
+app. Call someone and watch the menu bar icon change. Also: CallNotes is a
+<b>menu bar app</b> (phone icon, top right) — since 1.2.1, double-clicking it in
+Finder opens the panel as a window, and the panel tells you whether the recorder
+service is running (green dot).
+</details>
+
+<details>
 <summary><b>Which call apps are supported?</b></summary>
 <br>
 

@@ -788,6 +788,16 @@ func usage() -> Never {
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
+
+// Doppelklick im Finder (keine Argumente, kein Terminal): calltap ist der
+// unsichtbare Recorder — stattdessen die CallNotes-Oberflaeche oeffnen.
+if args.isEmpty && isatty(0) == 0 {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+    p.arguments = ["-b", "at.dasgeht.callnotes"]
+    try? p.run()
+    exit(0)
+}
 guard let cmd = args.first else { usage() }
 
 func flagValue(_ name: String) -> String? {
