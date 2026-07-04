@@ -165,6 +165,15 @@ bash callnotes-sync.sh      # mirror notes + audio to the external drive
 
 ## Troubleshooting
 
+- **The system-audio dialog never appears (mic dialog works) — and other
+  tap-based tools fail on your Mac too:** that's a machine-level issue, not this
+  app. Most common on **company-managed Macs**: an MDM/PPPC profile can block
+  screen/system-audio capture prompts system-wide (check System Settings →
+  General → Device Management, or `profiles list` in Terminal). On unmanaged
+  Macs, a stuck permission database can be reset with
+  `tccutil reset ScreenCapture at.dasgeht.calltap`, then request again via the
+  wizard button. The daemon log names the exact error code:
+  `grep "Tap verweigert" ~/CallNotes/log/callwatch.log`.
 - **System track is silent (-91 dB):** the tap API returns *silence, not an error*,
   when the System Audio Recording permission is missing. Check System Settings →
   Privacy & Security → Screen & System Audio Recording → calltap.

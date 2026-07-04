@@ -171,6 +171,16 @@ bash callnotes-sync.sh      # Notizen + Audio auf die externe Platte spiegeln
 
 ## Wenn etwas hakt
 
+- **Der Systemaudio-Dialog erscheint nie (Mikrofon-Dialog kommt) — und andere
+  Tap-Tools scheitern auf deinem Mac genauso:** Das ist ein Problem der
+  Maschine, nicht der App. Am häufigsten auf **firmenverwalteten Macs**: Ein
+  MDM-/PPPC-Profil kann Bildschirm-/Systemaudio-Aufnahme-Anfragen systemweit
+  blockieren (prüfen: Systemeinstellungen → Allgemein → Geräteverwaltung, oder
+  `profiles list` im Terminal). Auf privaten Macs kann eine verklemmte
+  Berechtigungs-Datenbank helfen:
+  `tccutil reset ScreenCapture at.dasgeht.calltap`, danach erneut über den
+  Wizard-Button anfordern. Das Daemon-Log nennt den genauen Fehlercode:
+  `grep "Tap verweigert" ~/CallNotes/log/callwatch.log`.
 - **System-Spur ist stumm (-91 dB):** Die Tap-API liefert bei fehlender
   Systemaudio-Freigabe *Stille statt eines Fehlers*. Prüfen: Systemeinstellungen →
   Datenschutz & Sicherheit → Bildschirm- & Systemaudioaufnahme → calltap.
