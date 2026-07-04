@@ -196,6 +196,16 @@ service is running (green dot).
 </details>
 
 <details>
+<summary><b>Intel or Apple Silicon?</b></summary>
+<br>
+
+Both. The requirement is <b>macOS 14.2+</b>, not the chip — Core Audio process
+taps exist on Intel Macs too. On Intel, Whisper transcribes without Metal
+acceleration (slower); consider the <code>ggml-small</code> model or the Groq
+transcriber there.
+</details>
+
+<details>
 <summary><b>Which call apps are supported?</b></summary>
 <br>
 

@@ -10,7 +10,7 @@ import AppKit
 import AVFoundation
 
 let kConfigPath = NSString(string: "~/.config/callnotes/config.json").expandingTildeInPath
-let kAppVersion = "1.2.2"
+let kAppVersion = "1.2.3"
 let kRepoURL = "https://github.com/michaelczesun/callnotes"
 
 let isGerman: Bool = {
@@ -802,6 +802,9 @@ struct WizardView: View {
     @EnvironmentObject var store: Store
     var close: () -> Void
     @State private var step = 0
+    @State private var permBusy = false
+    @State private var permResult: String?
+    @State private var permOk = false
     let total = 5
 
     var body: some View {
@@ -844,6 +847,33 @@ struct WizardView: View {
                     Label(L("Systemaudio-Aufnahme — die Stimme der Gegenseite", "System audio recording — the caller's voice"), systemImage: "speaker.wave.2.fill")
                 }
                 .font(.caption)
+                // Die Dialoge aktiv ausloesen — erst DANACH taucht calltap ueberhaupt
+                // in den Systemeinstellungs-Listen auf (Tester-Feedback 4.7.)
+                Button {
+                    permBusy = true; permResult = nil
+                    DispatchQueue.global().async {
+                        let p = Process()
+                        p.executableURL = URL(fileURLWithPath: NSHomeDirectory() + "/Applications/calltap.app/Contents/MacOS/calltap")
+                        p.arguments = ["setup"]
+                        p.standardOutput = Pipe(); p.standardError = Pipe()
+                        var ok = false
+                        do { try p.run(); p.waitUntilExit(); ok = p.terminationStatus == 0 } catch {}
+                        DispatchQueue.main.async {
+                            permBusy = false
+                            permOk = ok
+                            permResult = ok
+                                ? L("Beide Freigaben aktiv — calltap erscheint jetzt auch in den Systemeinstellungen.", "Both permissions active — calltap now also appears in System Settings.")
+                                : L("Noch nicht vollständig: die macOS-Dialoge bestätigen bzw. calltap in beiden Listen aktivieren, dann erneut prüfen.", "Not complete yet: confirm the macOS dialogs or enable calltap in both lists, then check again.")
+                        }
+                    }
+                } label: {
+                    if permBusy { ProgressView().controlSize(.small) } else { Text(L("Freigaben jetzt anfordern & prüfen", "Request & check permissions now")) }
+                }
+                .disabled(permBusy)
+                if let r = permResult {
+                    Text(r).font(.caption2).foregroundColor(permOk ? .green : .orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Text(L("Kam kein Dialog oder ist die Gegenseite später stumm, findest du beides hier:", "If there's no dialogue or the caller is silent later, find both settings here:"))
                     .font(.caption).foregroundColor(.secondary)
                 HStack {

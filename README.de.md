@@ -205,6 +205,16 @@ Aufnahme-Dienst läuft (grüner Punkt).
 </details>
 
 <details>
+<summary><b>Intel oder Apple Silicon?</b></summary>
+<br>
+
+Beides. Die Anforderung ist <b>macOS 14.2+</b>, nicht der Chip — Core-Audio-
+Process-Taps gibt es auch auf Intel-Macs. Auf Intel transkribiert Whisper ohne
+Metal-Beschleunigung (langsamer); dort lieber das <code>ggml-small</code>-Modell
+oder den Groq-Transcriber nehmen.
+</details>
+
+<details>
 <summary><b>Welche Telefonie-Apps werden unterstützt?</b></summary>
 <br>
 
