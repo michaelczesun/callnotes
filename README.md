@@ -80,27 +80,46 @@ Everything lives in the menu bar (phone icon):
 
 ## Install
 
+**1. Dependencies** (Homebrew + Xcode Command Line Tools):
+
 ```bash
 brew install whisper-cpp ffmpeg
+```
+
+**2. Clone & install:**
+
+```bash
 git clone https://github.com/michaelczesun/callnotes && cd callnotes
 ./install.sh
 ```
 
-`install.sh` builds two apps into `~/Applications`, sets up the diarization models
-(~35 MB), creates `~/.config/callnotes/config.json` and starts the launchd agents.
+This builds **CallNotes.app into /Applications** (the settings & status app —
+find it in your Applications folder or as the phone icon in the menu bar) and
+the invisible recording helper **calltap.app into ~/Applications** (don't move
+it — the recording permissions are tied to it). It also sets up the speaker
+models (~35 MB), creates `~/.config/callnotes/config.json` and starts both
+background services.
 
-Grab the Whisper model once (~550 MB):
+**3. Whisper model** (once, ~550 MB — on 8 GB machines `ggml-small.bin` is fine too):
 
 ```bash
 mkdir -p ~/models && curl -L -o ~/models/ggml-large-v3-turbo-q5_0.bin \
   https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
 ```
 
-**First launch:** macOS asks for two permissions for "calltap" (Microphone +
-System Audio Recording) — allow both. If no dialog appears: System Settings →
-Privacy & Security → *Microphone* / *Screen & System Audio Recording* → calltap.
+**4. Permissions — do this once.** Click the phone icon in the menu bar; the
+setup wizard opens on first run (later: Settings → *Restart initial setup*). In
+the **Permissions** step, click **"Request & check permissions now"** — the two
+macOS dialogs appear (Microphone + System Audio Recording for "calltap"), allow
+both, and the button confirms with a green check. Note: calltap only shows up in
+System Settings' permission lists *after* this first request — that's macOS
+behavior, not a missing entry.
 
-Then make a test call (>20 s). Watch `~/CallNotes/log/process.log` if you're curious.
+**5. Test call** (>20 s) — about a minute after hanging up, the note appears in
+your notes folder. Curious? `tail -f ~/CallNotes/log/process.log`.
+
+**Updating later:** `cd callnotes && git pull && ./install.sh` — settings and
+notes stay untouched.
 
 ## Uninstall
 

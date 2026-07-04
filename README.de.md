@@ -85,29 +85,47 @@ Alles sitzt in der Menüleiste (Telefon-Symbol):
 
 ## Installation
 
+**1. Abhängigkeiten** (Homebrew + Xcode Command Line Tools):
+
 ```bash
 brew install whisper-cpp ffmpeg
+```
+
+**2. Klonen & installieren:**
+
+```bash
 git clone https://github.com/michaelczesun/callnotes && cd callnotes
 ./install.sh
 ```
 
-`install.sh` baut zwei Apps nach `~/Applications`, richtet die Diarisierungs-Modelle
-(~35 MB) ein, legt `~/.config/callnotes/config.json` an und startet die launchd-Agents.
+Das baut **CallNotes.app nach /Programme** (die Einstellungs- & Status-App — im
+Programme-Ordner zu finden bzw. als Telefon-Symbol in der Menüleiste) und den
+unsichtbaren Aufnahme-Helfer **calltap.app nach ~/Applications** (nicht
+verschieben — die Aufnahme-Freigaben hängen daran). Außerdem werden die
+Sprecher-Modelle (~35 MB) eingerichtet, `~/.config/callnotes/config.json`
+angelegt und beide Hintergrund-Dienste gestartet.
 
-Whisper-Modell einmalig laden (~550 MB):
+**3. Whisper-Modell** (einmalig, ~550 MB — auf 8-GB-Macs reicht auch `ggml-small.bin`):
 
 ```bash
 mkdir -p ~/models && curl -L -o ~/models/ggml-large-v3-turbo-q5_0.bin \
   https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
 ```
 
-**Beim ersten Start** fragt macOS nach zwei Freigaben für „calltap" (Mikrofon +
-Systemaudio-Aufnahme) — beide erlauben. Falls kein Dialog erscheint:
-Systemeinstellungen → Datenschutz & Sicherheit → *Mikrofon* bzw.
-*Bildschirm- & Systemaudioaufnahme* → calltap.
+**4. Freigaben — einmal machen.** Telefon-Symbol in der Menüleiste anklicken;
+beim ersten Start öffnet sich der Einrichtungs-Assistent (später: Einstellungen
+→ *Ersteinrichtung erneut starten*). Im Schritt **Freigaben** auf **„Freigaben
+jetzt anfordern & prüfen"** klicken — die zwei macOS-Dialoge erscheinen
+(Mikrofon + Systemaudio-Aufnahme für „calltap"), beide erlauben, der Button
+bestätigt mit grünem Haken. Wichtig: calltap taucht in den
+Systemeinstellungs-Listen erst *nach* dieser ersten Anfrage auf — das ist
+macOS-Verhalten, kein fehlender Eintrag.
 
-Danach: **Testanruf machen** (länger als 20 Sekunden). Fortschritt bei Bedarf in
-`~/CallNotes/log/process.log`.
+**5. Testanruf** (länger als 20 Sekunden) — etwa eine Minute nach dem Auflegen
+liegt die Notiz im Notizen-Ordner. Neugierig? `tail -f ~/CallNotes/log/process.log`.
+
+**Später aktualisieren:** `cd callnotes && git pull && ./install.sh` —
+Einstellungen und Notizen bleiben erhalten.
 
 ## Deinstallation
 
