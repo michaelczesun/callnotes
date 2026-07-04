@@ -10,7 +10,7 @@ import AppKit
 import AVFoundation
 
 let kConfigPath = NSString(string: "~/.config/callnotes/config.json").expandingTildeInPath
-let kAppVersion = "1.2.3"
+let kAppVersion = "1.2.4"
 let kRepoURL = "https://github.com/michaelczesun/callnotes"
 
 let isGerman: Bool = {
@@ -852,18 +852,28 @@ struct WizardView: View {
                 Button {
                     permBusy = true; permResult = nil
                     DispatchQueue.global().async {
+                        // WICHTIG: ueber den launchd-Daemon ausloesen — nur so ist die
+                        // TCC-Anfrage calltap.app zugerechnet (ein von HIER gespawntes
+                        // calltap wuerde CallNotes als verantwortlichen Prozess erben,
+                        // und calltap erschiene nie in den Systemeinstellungs-Listen).
                         let p = Process()
-                        p.executableURL = URL(fileURLWithPath: NSHomeDirectory() + "/Applications/calltap.app/Contents/MacOS/calltap")
-                        p.arguments = ["setup"]
+                        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+                        p.arguments = ["kickstart", "-k", "gui/\(getuid())/at.dasgeht.callwatch"]
                         p.standardOutput = Pipe(); p.standardError = Pipe()
+                        try? p.run(); p.waitUntilExit()
+                        Thread.sleep(forTimeInterval: 6)
+                        // Ergebnis aus dem Daemon-Log: Selbsttest laeuft direkt nach Start
                         var ok = false
-                        do { try p.run(); p.waitUntilExit(); ok = p.terminationStatus == 0 } catch {}
+                        if let log = try? String(contentsOfFile: NSHomeDirectory() + "/CallNotes/log/callwatch.log", encoding: .utf8) {
+                            let tail = log.components(separatedBy: "callwatch gestartet").last ?? ""
+                            ok = tail.contains("Self-Test: Systemaudio-Tap ok") && !tail.contains("keine Mikrofon-Freigabe")
+                        }
                         DispatchQueue.main.async {
                             permBusy = false
                             permOk = ok
                             permResult = ok
                                 ? L("Beide Freigaben aktiv — calltap erscheint jetzt auch in den Systemeinstellungen.", "Both permissions active — calltap now also appears in System Settings.")
-                                : L("Noch nicht vollständig: die macOS-Dialoge bestätigen bzw. calltap in beiden Listen aktivieren, dann erneut prüfen.", "Not complete yet: confirm the macOS dialogs or enable calltap in both lists, then check again.")
+                                : L("Noch nicht vollständig: eben erschienene macOS-Dialoge erlauben bzw. calltap in beiden Listen aktivieren — dann erneut prüfen.", "Not complete yet: allow the macOS dialogs that just appeared, or enable calltap in both lists — then check again.")
                         }
                     }
                 } label: {

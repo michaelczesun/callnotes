@@ -24,6 +24,9 @@ fi
 
 # 2) Bauen
 bash build.sh
+# Migration: alte Kopie im Benutzer-Programme-Ordner entfernen (CallNotes wohnt
+# seit 1.2.x in /Applications — eine liegengebliebene alte App zeigt alte Bugs)
+rm -rf "$HOME/Applications/CallNotes.app" 2>/dev/null || true
 
 # 3) Config anlegen (bestehende bleibt unangetastet), postScript auf dieses Repo zeigen
 mkdir -p "$CFG_DIR" "$HOME/CallNotes/rec" "$HOME/CallNotes/log" "$HOME/CallNotes/audio" "$HOME/CallNotes/failed"
