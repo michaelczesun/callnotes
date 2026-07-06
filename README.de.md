@@ -77,6 +77,10 @@ Alles sitzt in der Menüleiste (Telefon-Symbol):
 - **Letzte Anrufe**, Speicherorte (inkl. externer Platte), API-Keys, Integrationen
 - **Ersteinrichtungs-Assistent**, eingebauter **Hilfebereich** und ein ⓘ neben
   jedem Feld — du musst nie raten, was eine Einstellung tut
+- **Live-Mikro-Monitor** — das Panel zeigt in Echtzeit, welche App gerade dein
+  Mikrofon nutzt, auch eine, die *nicht* in deiner Anruf-Liste steht (z. B. ein
+  Browser). Ein Klick auf **„Diese App immer aufnehmen“** nimmt sie auf —
+  ab dann werden auch Browser-Calls mitgeschnitten.
 - **Deutsch & Englisch** — die App folgt automatisch deiner Systemsprache
 
 <p align="center">
@@ -204,6 +208,19 @@ bash callnotes-sync.sh      # Notizen + Audio auf die externe Platte spiegeln
   lassen sich mit `bash process-call.sh <ordner>` erneut anstoßen.
 
 ## FAQ
+
+<details>
+<summary><b>Funktioniert das auch mit Browser-Calls (Google Meet, Teams-Web)?</b></summary>
+<br>
+
+Ja. Meet/Teams-Web/Whereby laufen im Browser, stehen also anfangs nicht in der
+Anruf-Liste. Sobald ein Browser-Call läuft, zeigt der <b>Live-Mikro-Monitor</b>
+im Panel das an („Chrome nutzt gerade dein Mikrofon“) samt Knopf
+<b>Diese App immer aufnehmen</b> — ein Klick, und Browser-Calls werden ab dann
+erfasst. Haken: Es wird dann der ganze Browser-Ton getappt — läuft in einem
+anderen Tab Musik, kann sie in die Aufnahme bluten; andere Tabs während des
+Calls stummschalten.
+</details>
 
 <details>
 <summary><b>Läuft das auch auf Windows oder Linux?</b></summary>

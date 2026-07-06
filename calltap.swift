@@ -575,9 +575,11 @@ func cmdWatch(configPath: String) {
     let recBase = base.appendingPathComponent("rec")
     let stateDir = base.appendingPathComponent("state")
     let currentCallFile = stateDir.appendingPathComponent("current-call.json")
+    let micActiveFile = stateDir.appendingPathComponent("mic-active.json")
     try? FileManager.default.createDirectory(at: recBase, withIntermediateDirectories: true)
     try? FileManager.default.createDirectory(at: stateDir.appendingPathComponent("pending"), withIntermediateDirectories: true)
     try? FileManager.default.removeItem(at: currentCallFile) // Reste eines Absturzes
+    try? FileManager.default.removeItem(at: micActiveFile)
     // Verwaiste Aufnahmen eines Absturzes (rec-dir ohne meta.json) nach failed/
     // verschieben — dort macht die Menueleisten-App sie sichtbar (Erneut versuchen).
     let failedDir = base.appendingPathComponent("failed")
@@ -632,14 +634,30 @@ func cmdWatch(configPath: String) {
     }
 
     // Alle Audio-Prozesse derselben App-Familie (Haupt-App + .helper-Prozesse) —
-    // bei Electron-Apps spielt oft ein Helper den Call-Ton, nicht der Mikro-Prozess.
+    // bei Electron-/Browser-Apps spielt der Call-Ton oft in einem ANDEREN Prozess
+    // als dem Mikro-Prozess. Deshalb auf die Basis-Bundle-ID reduzieren (Helper-/
+    // Service-Suffixe abschneiden) und die ganze Familie tappen — sonst waere die
+    // System-Spur bei Browser-Calls (Google Meet: Mikro in com.google.Chrome.helper,
+    // Gegenseite-Ton in com.google.Chrome) stumm.
+    func baseBundle(_ bundle: String) -> String {
+        let parts = bundle.split(separator: ".").map(String.init)
+        var cut = parts.count
+        for (i, part) in parts.enumerated() {
+            let low = part.lowercased()
+            if low == "helper" || low == "serviceextension" || low == "gpu" { cut = i; break }
+        }
+        // mind. 2 Komponenten behalten (com.google), damit nicht die halbe Welt matcht
+        return parts.prefix(max(cut, 2)).joined(separator: ".")
+    }
+
     func tapTargets(trigger obj: AudioObjectID, bundle: String) -> [AudioObjectID] {
         if cfg.tapScope == "global" { return [] }
         guard !bundle.isEmpty else { return [obj] }
+        let base = baseBundle(bundle)
         var family: [AudioObjectID] = []
         for p in processObjects() {
             let b = procBundleID(p)
-            if b == bundle || b.hasPrefix(bundle + ".") { family.append(p) }
+            if b == base || b.hasPrefix(base + ".") { family.append(p) }
         }
         return family.isEmpty ? [obj] : family
     }
@@ -654,6 +672,21 @@ func cmdWatch(configPath: String) {
         ]
         if let d = try? JSONSerialization.data(withJSONObject: info, options: [.prettyPrinted]) {
             try? d.write(to: currentCallFile)
+        }
+    }
+
+    // Live-Mikro-Monitor fuer die Menueleisten-App: WELCHE App nutzt gerade das
+    // Mikrofon (auch nicht-gelistete)? Damit sieht man im Panel, was laeuft, und
+    // kann eine unbekannte App per Klick in die Aufnahme-Liste holen (Browser-Calls!).
+    func writeMicActive(_ app: (bundle: String, name: String, listed: Bool)?, recording: Bool) {
+        guard let a = app else { try? FileManager.default.removeItem(at: micActiveFile); return }
+        let base = a.bundle.isEmpty ? "" : baseBundle(a.bundle)
+        // Anzeigename: letzte Komponente des Basis-Bundles (Chrome, WhatsApp, Discord)
+        // statt eines nichtssagenden "helper".
+        let display = base.split(separator: ".").last.map(String.init) ?? a.name
+        let info: [String: Any] = ["bundle": a.bundle, "base": base, "name": display, "listed": a.listed, "recording": recording]
+        if let d = try? JSONSerialization.data(withJSONObject: info, options: [.prettyPrinted]) {
+            try? d.write(to: micActiveFile)
         }
     }
 
@@ -695,13 +728,20 @@ func cmdWatch(configPath: String) {
         }
 
         var active: (AudioObjectID, String)? = nil
+        var micApp: (bundle: String, name: String, listed: Bool)? = nil
         for p in processObjects() {
             guard procIsRunningInput(p) else { continue }
             let bundle = procBundleID(p)
             // Nie auf sich selbst triggern — direkt gestartete Binaries haben in
             // CoreAudio KEINE Bundle-ID, deshalb zusaetzlich der Prozessname.
             if bundle == "at.dasgeht.calltap" || processName(procPID(p)) == "calltap" { continue }
-            if cfg.matches(bundle) {
+            let listed = cfg.matches(bundle)
+            // Erste mikro-aktive App fuer den Live-Monitor merken; eine gelistete
+            // App hat Vorrang (die wird ja ohnehin gleich aufgenommen).
+            if micApp == nil || (listed && !(micApp?.listed ?? true)) {
+                micApp = (bundle, shortName(bundle, pid: procPID(p)), listed)
+            }
+            if listed {
                 active = (p, bundle)
                 break
             } else if session == nil {
@@ -712,6 +752,7 @@ func cmdWatch(configPath: String) {
                 }
             }
         }
+        writeMicActive(micApp, recording: session != nil)
 
         // Unterdrueckung nach "Nicht aufnehmen": solange dieselbe App das Mikro haelt,
         // nicht neu starten; erst wenn der Anruf wirklich vorbei ist, wieder scharf.

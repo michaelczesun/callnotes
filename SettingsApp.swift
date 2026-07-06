@@ -10,7 +10,7 @@ import AppKit
 import AVFoundation
 
 let kConfigPath = NSString(string: "~/.config/callnotes/config.json").expandingTildeInPath
-let kAppVersion = "1.2.5"
+let kAppVersion = "1.3.0"
 let kRepoURL = "https://github.com/michaelczesun/callnotes"
 
 let isGerman: Bool = {
@@ -48,6 +48,17 @@ struct CurrentCall: Equatable {
     let dir: String
     let appName: String
     let start: Date
+}
+
+// Live-Mikro-Monitor: welche App nutzt gerade das Mikrofon (auch nicht-gelistete)?
+struct MicActive: Equatable {
+    let bundle: String
+    let base: String
+    let name: String
+    let listed: Bool
+    let recording: Bool
+    // Muster fuer die Allowlist: Basis + "*" faengt Haupt-App UND Helper (Browser/Electron)
+    var addPattern: String { base.isEmpty ? bundle : base + "*" }
 }
 
 struct PendingSpeaker: Identifiable {
@@ -100,6 +111,7 @@ final class Store: ObservableObject {
     @Published var failedCount = 0
     @Published var updateAvailable: String? = nil
     @Published var currentCall: CurrentCall? = nil
+    @Published var micActive: MicActive? = nil
     @Published var callElapsed = ""
     @Published var micLevels: [Double] = []
     @Published var sysLevels: [Double] = []
@@ -175,6 +187,10 @@ final class Store: ObservableObject {
             micLevels = (0..<42).map { 0.08 + 0.85 * abs(sin(Double($0) * 0.52)) }
             sysLevels = (0..<42).map { 0.08 + 0.80 * abs(sin(Double($0) * 0.37 + 1.4)) }
             participantFields = ["Anna", ""]
+        }
+        if mode == "micmonitor" {
+            micActive = MicActive(bundle: "com.google.Chrome.helper", base: "com.google.Chrome",
+                                  name: "Chrome", listed: false, recording: false)
         }
         if mode == "pending" {
             let sp = [PendingSpeaker(label: L("Sprecher 1", "Speaker 1"), clip: "", suggestion: "Anna", totalSec: 34),
@@ -277,10 +293,41 @@ final class Store: ObservableObject {
 
     func poll() {
         pollCurrentCall()
+        pollMicActive()
         pollPendings()
         pollProcessing()
         tick += 1
         if tick % 5 == 0 { refreshDaemon(); refreshNotes() }
+    }
+
+    private func pollMicActive() {
+        let f = baseDir + "/state/mic-active.json"
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: f)),
+              let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let name = o["name"] as? String else {
+            if micActive != nil { micActive = nil }
+            return
+        }
+        let m = MicActive(bundle: o["bundle"] as? String ?? "",
+                          base: o["base"] as? String ?? "",
+                          name: name,
+                          listed: o["listed"] as? Bool ?? false,
+                          recording: o["recording"] as? Bool ?? false)
+        if micActive != m { micActive = m }
+    }
+
+    // Unbekannte mikro-aktive App per Klick dauerhaft aufnehmen: in die apps-Liste
+    // aufnehmen, Config speichern, Daemon neu laden (sonst greift die neue Liste erst
+    // beim naechsten Start). Wirkt ab sofort — auch fuer einen gerade laufenden Anruf.
+    @discardableResult
+    func alwaysRecord(pattern: String) -> Bool {
+        guard !pattern.isEmpty else { return false }
+        var apps = (raw["apps"] as? [String]) ?? []
+        if !apps.contains(pattern) { apps.append(pattern) }
+        raw["apps"] = apps
+        guard persist() else { return false }
+        run(["/bin/launchctl", "kickstart", "-k", "gui/\(getuid())/at.dasgeht.callwatch"])
+        return true
     }
 
     private func pollCurrentCall() {
@@ -1364,6 +1411,7 @@ struct SettingsSection: View {
 struct MenuPanelView: View {
     @EnvironmentObject var store: Store
     @State private var showSettings: Bool
+    @State private var addingApp = false
     private let unlimited: Bool
 
     init(startWithSettings: Bool = false, unlimited: Bool = false) {
@@ -1426,9 +1474,49 @@ struct MenuPanelView: View {
                 }
             }
 
+            // Live-Mikro-Monitor: WAS nutzt gerade das Mikrofon? Macht auch
+            // nicht-gelistete Apps sichtbar (Google Meet/Teams-Web im Browser) und
+            // erlaubt, sie per Klick dauerhaft aufzunehmen.
+            if store.currentCall == nil, let m = store.micActive {
+                Card {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "mic.fill")
+                            .foregroundColor(m.listed ? .indigo : .orange)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(L("\u{201E}\(m.name)\u{201C} nutzt gerade dein Mikrofon", "\u{201C}\(m.name)\u{201D} is using your microphone"))
+                                .font(.callout.weight(.semibold))
+                                .fixedSize(horizontal: false, vertical: true)
+                            if m.listed {
+                                Text(L("Aufnahme startet …", "Recording starting …"))
+                                    .font(.caption).foregroundColor(.secondary)
+                            } else {
+                                Text(L("Wird nicht aufgenommen — nicht in deiner Anruf-Liste.", "Not being recorded — not in your call list."))
+                                    .font(.caption).foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Button {
+                                    addingApp = true
+                                    let pattern = m.addPattern
+                                    DispatchQueue.global().async {
+                                        _ = store.alwaysRecord(pattern: pattern)
+                                        DispatchQueue.main.async { addingApp = false }
+                                    }
+                                } label: {
+                                    if addingApp { ProgressView().controlSize(.small) }
+                                    else { Label(L("Diese App immer aufnehmen", "Always record this app"),
+                                                 systemImage: "plus.circle.fill") }
+                                }
+                                .controlSize(.small)
+                                .disabled(addingApp || m.addPattern.isEmpty)
+                            }
+                        }
+                        Spacer()
+                    }
+                }
+            }
+
             // Leerlauf: Erstnutzern erklaeren, WANN etwas passiert (Popup kommt
             // erst im laufenden Anruf, nicht schon beim Oeffnen der Call-App)
-            if store.currentCall == nil && store.processingPhase == nil && store.pendings.isEmpty {
+            if store.currentCall == nil && store.micActive == nil && store.processingPhase == nil && store.pendings.isEmpty {
                 Card {
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: safeSymbol(["waveform.badge.magnifyingglass", "waveform"]))

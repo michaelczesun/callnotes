@@ -72,6 +72,10 @@ Everything lives in the menu bar (phone icon):
 - **Recent calls**, storage locations (incl. external drive), API keys, integrations
 - **First-run setup wizard**, a built-in **help section**, and an ⓘ explainer next to
   every setting — you never have to guess what a field does
+- **Live mic monitor** — the panel shows in real time which app is currently
+  using your microphone, even one that's *not* in your call list (e.g. a browser).
+  One click on **"Always record this app"** adds it, so browser calls get captured
+  from then on.
 - **English & German UI** — follows your system language automatically
 
 <p align="center">
@@ -196,6 +200,19 @@ bash callnotes-sync.sh      # mirror notes + audio to the external drive
   `bash process-call.sh <dir>`.
 
 ## FAQ
+
+<details>
+<summary><b>Does it work with browser calls (Google Meet, Teams web)?</b></summary>
+<br>
+
+Yes. Meet/Teams-web/Whereby run inside your browser, so out of the box they're
+not in the call list. When a browser call is active, the panel's <b>live mic
+monitor</b> shows it (“Chrome is using your microphone”) with an
+<b>Always record this app</b> button — one click and browser calls are captured
+from then on. Caveat: it then taps the whole browser's audio, so if you have
+music playing in another tab it can bleed into the recording — mute other tabs
+during calls.
+</details>
 
 <details>
 <summary><b>Does it run on Windows or Linux?</b></summary>
