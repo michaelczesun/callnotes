@@ -10,7 +10,7 @@ import AppKit
 import AVFoundation
 
 let kConfigPath = NSString(string: "~/.config/callnotes/config.json").expandingTildeInPath
-let kAppVersion = "1.3.1"
+let kAppVersion = "1.3.2"
 let kRepoURL = "https://github.com/michaelczesun/callnotes"
 
 let isGerman: Bool = {
@@ -286,8 +286,12 @@ final class Store: ObservableObject {
         p.standardOutput = pipe
         p.standardError = pipe
         do { try p.run() } catch { return (-1, "\(error)") }
+        // ERST die Pipe leeren, DANN auf Exit warten: schreibt der Prozess mehr als
+        // den ~64KB-Pipe-Puffer (z. B. rsync-Fehlerflut), wuerde waitUntilExit() vor
+        // dem Lesen in einen Deadlock laufen (Kind blockiert im write, Parent im wait).
+        let out = pipe.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
-        return (p.terminationStatus, String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "")
+        return (p.terminationStatus, String(data: out, encoding: .utf8) ?? "")
     }
 
     // MARK: Polling
@@ -320,15 +324,18 @@ final class Store: ObservableObject {
     // Unbekannte mikro-aktive App per Klick dauerhaft aufnehmen: in die apps-Liste
     // aufnehmen, Config speichern, Daemon neu laden (sonst greift die neue Liste erst
     // beim naechsten Start). Wirkt ab sofort — auch fuer einen gerade laufenden Anruf.
-    @discardableResult
-    func alwaysRecord(pattern: String) -> Bool {
-        guard !pattern.isEmpty else { return false }
+    // MUSS auf dem Main-Thread laufen: persist() liest ~20 @Published-Felder, die die
+    // UI live editiert — ein Hintergrund-persist() waere ein Data-Race auf raw + den
+    // Feldern. Nur der Daemon-Neustart (Subprozess) darf async, damit die UI nicht haengt.
+    func alwaysRecord(pattern: String) {
+        guard !pattern.isEmpty else { return }
         var apps = (raw["apps"] as? [String]) ?? []
         if !apps.contains(pattern) { apps.append(pattern) }
         raw["apps"] = apps
-        guard persist() else { return false }
-        run(["/bin/launchctl", "kickstart", "-k", "gui/\(getuid())/at.dasgeht.callwatch"])
-        return true
+        guard persist() else { return }
+        DispatchQueue.global().async { [weak self] in
+            _ = self?.run(["/bin/launchctl", "kickstart", "-k", "gui/\(getuid())/at.dasgeht.callwatch"])
+        }
     }
 
     private func pollCurrentCall() {
@@ -1421,7 +1428,6 @@ struct SettingsSection: View {
 struct MenuPanelView: View {
     @EnvironmentObject var store: Store
     @State private var showSettings: Bool
-    @State private var addingApp = false
     private let unlimited: Bool
 
     init(startWithSettings: Bool = false, unlimited: Bool = false) {
@@ -1504,19 +1510,13 @@ struct MenuPanelView: View {
                                     .font(.caption).foregroundColor(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Button {
-                                    addingApp = true
-                                    let pattern = m.addPattern
-                                    DispatchQueue.global().async {
-                                        _ = store.alwaysRecord(pattern: pattern)
-                                        DispatchQueue.main.async { addingApp = false }
-                                    }
+                                    store.alwaysRecord(pattern: m.addPattern)  // Main-Thread; Neustart async intern
                                 } label: {
-                                    if addingApp { ProgressView().controlSize(.small) }
-                                    else { Label(L("Diese App immer aufnehmen", "Always record this app"),
-                                                 systemImage: "plus.circle.fill") }
+                                    Label(L("Diese App immer aufnehmen", "Always record this app"),
+                                          systemImage: "plus.circle.fill")
                                 }
                                 .controlSize(.small)
-                                .disabled(addingApp || m.addPattern.isEmpty)
+                                .disabled(m.addPattern.isEmpty)
                             }
                         }
                         Spacer()

@@ -25,7 +25,13 @@ done
 # 3) Optional: Daten und Modelle
 if [ "${1:-}" = "--purge" ]; then
   NOTES=$(python3 -c "import json,os;print(os.path.expanduser(json.load(open(os.path.expanduser('~/.config/callnotes/config.json'))).get('notesDir','')))" 2>/dev/null || true)
-  rm -rf "$HOME/CallNotes" && echo "Arbeitsordner entfernt: ~/CallNotes (Aufnahmen, Logs)"
+  # NUR fluechtige Arbeitsdaten loeschen. NIE die Notizen (notesDir, im Default
+  # ~/CallNotes/notes) oder das Audio-Archiv (~/CallNotes/audio) — deshalb gezielt
+  # die Unterordner statt eines `rm -rf ~/CallNotes`, das die Notizen mitrissen wuerde.
+  for sub in rec log failed state pending; do rm -rf "$HOME/CallNotes/$sub"; done
+  rmdir "$HOME/CallNotes" 2>/dev/null \
+    && echo "Arbeitsordner ~/CallNotes entfernt (war leer)" \
+    || echo "Arbeitsdaten entfernt (rec/log/failed/state) — Notizen & Audio in ~/CallNotes bleiben erhalten"
   rm -rf "$HOME/.config/callnotes" && echo "Config entfernt: ~/.config/callnotes"
   rm -rf "$HOME/.local/share/callnotes" && echo "venv + Modelle entfernt: ~/.local/share/callnotes"
   [ -n "$NOTES" ] && echo "Deine Notizen bleiben unangetastet: $NOTES"

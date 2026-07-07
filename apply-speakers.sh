@@ -29,9 +29,11 @@ for m in _re.finditer(r"((?:Sprecher|Speaker) \d+)\s*=\s*([^;]*(?:;(?!\s*(?:Spre
 
 if pairs:
     text = open(note, encoding="utf-8").read()
-    # laengere Labels zuerst ersetzen (Sprecher 10 vor Sprecher 1)
+    # Wort-Grenze erzwingen: "Sprecher 1" darf NICHT in "Sprecher 10" ersetzen.
+    # (Reine Laengensortierung schuetzt nur GEMAPPTE Labels; ungemappte "?"-Sprecher
+    # mit hoeherer Nummer wuerden sonst korrumpiert.)
     for k, v in sorted(pairs, key=lambda kv: -len(kv[0])):
-        text = text.replace(k, v)
+        text = _re.sub(_re.escape(k) + r"(?!\d)", v, text)
     open(note, "w", encoding="utf-8").write(text)
     print(f"Notiz aktualisiert: {os.path.basename(note)} ({'; '.join(f'{k} -> {v}' for k, v in pairs)})")
 else:

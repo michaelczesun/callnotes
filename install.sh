@@ -51,14 +51,18 @@ if [ -n "$MODEL" ] && [ ! -f "$MODEL" ]; then
   MODELNAME=$(basename "$MODEL")
   echo "Lade Whisper-Modell '$MODELNAME' (~550 MB, einmalig) — das dauert ein paar Minuten …"
   mkdir -p "$(dirname "$MODEL")"
+  DL_OK=0
   for i in 1 2 3 4 5; do
-    curl -L -C - -f -o "$MODEL" \
-      "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODELNAME" && break
+    if curl -L -C - -f -o "$MODEL" \
+      "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODELNAME"; then DL_OK=1; break; fi
     echo "  Download unterbrochen — neuer Versuch ($i/5) …"; sleep 2
   done
-  if [ -f "$MODEL" ]; then
+  # Erfolg am curl-Exit festmachen, NICHT nur an [ -f ] — sonst gilt eine
+  # liegengebliebene Teildatei faelschlich als fertiges Modell.
+  if [ "$DL_OK" = 1 ] && [ -f "$MODEL" ]; then
     echo "Whisper-Modell bereit: $MODEL"
   else
+    rm -f "$MODEL"  # Teildatei entfernen, damit der naechste Lauf sauber neu laedt
     echo "WARNUNG: Whisper-Modell-Download fehlgeschlagen. Ohne Modell scheitert die Verarbeitung!"
     echo "  Manuell nachholen: curl -L -o \"$MODEL\" \\"
     echo "    \"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODELNAME\""

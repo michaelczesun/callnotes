@@ -577,6 +577,9 @@ func cmdWatch(configPath: String) {
     let currentCallFile = stateDir.appendingPathComponent("current-call.json")
     let micActiveFile = stateDir.appendingPathComponent("mic-active.json")
     try? FileManager.default.createDirectory(at: recBase, withIntermediateDirectories: true)
+    // log/ zwingend anlegen — spawnPost leitet nach <outDir>/log/process.log um;
+    // fehlt der Ordner, scheitert die Redirection und das Post-Skript laeuft NIE.
+    try? FileManager.default.createDirectory(at: base.appendingPathComponent("log"), withIntermediateDirectories: true)
     try? FileManager.default.createDirectory(at: stateDir.appendingPathComponent("pending"), withIntermediateDirectories: true)
     try? FileManager.default.removeItem(at: currentCallFile) // Reste eines Absturzes
     try? FileManager.default.removeItem(at: micActiveFile)
