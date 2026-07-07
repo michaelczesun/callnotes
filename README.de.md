@@ -207,6 +207,11 @@ bash callnotes-sync.sh      # Notizen + Audio auf die externe Platte spiegeln
 - Fehlgeschlagene Verarbeitungen liegen mit Roh-Audio in `~/CallNotes/failed/` und
   lassen sich mit `bash process-call.sh <ordner>` erneut anstoßen.
 
+## Feedback & Fragen
+
+- 🐛 **Etwas kaputt?** Ein [Issue](https://github.com/michaelczesun/callnotes/issues) aufmachen — bitte mit deiner macOS-Version und dem, was das Panel oder `~/CallNotes/log/` gezeigt hat.
+- 💬 **Fragen, Ideen oder „hat einfach funktioniert"?** Ab in die [Discussions](https://github.com/michaelczesun/callnotes/discussions) — der Ort zum Kommentieren und Tipps austauschen.
+
 ## FAQ
 
 <details>

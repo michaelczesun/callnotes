@@ -199,6 +199,11 @@ bash callnotes-sync.sh      # mirror notes + audio to the external drive
 - Failed jobs land in `~/CallNotes/failed/` with raw audio; reprocess with
   `bash process-call.sh <dir>`.
 
+## Feedback & questions
+
+- 🐛 **Something broke?** Open an [issue](https://github.com/michaelczesun/callnotes/issues) — please include your macOS version and what the panel or `~/CallNotes/log/` showed.
+- 💬 **Questions, ideas, or "it just worked"?** Head to [Discussions](https://github.com/michaelczesun/callnotes/discussions) — that's the place to comment and swap tips.
+
 ## FAQ
 
 <details>
