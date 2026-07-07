@@ -44,12 +44,26 @@ d.pop("_hinweis", None)
 json.dump(d, open(cfg, "w"), indent=2, ensure_ascii=False, sort_keys=True)
 PY
 
-# Whisper-Modell pruefen (nur Hinweis, kein Abbruch)
+# Whisper-Modell: fehlt es, direkt laden — OHNE Modell nimmt CallNotes zwar auf,
+# aber die Verarbeitung scheitert danach still (haeufigster Erstnutzer-Stolperstein).
 MODEL=$(python3 -c "import json,os;print(os.path.expanduser(json.load(open('$CFG')).get('whisperModel','')))")
-if [ ! -f "$MODEL" ]; then
-  echo "HINWEIS: Whisper-Modell fehlt noch: $MODEL"
-  echo "  Download (~550 MB): mkdir -p \"$(dirname "$MODEL")\" && curl -L -o \"$MODEL\" \\"
-  echo "    https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin"
+if [ -n "$MODEL" ] && [ ! -f "$MODEL" ]; then
+  MODELNAME=$(basename "$MODEL")
+  echo "Lade Whisper-Modell '$MODELNAME' (~550 MB, einmalig) — das dauert ein paar Minuten …"
+  mkdir -p "$(dirname "$MODEL")"
+  for i in 1 2 3 4 5; do
+    curl -L -C - -f -o "$MODEL" \
+      "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODELNAME" && break
+    echo "  Download unterbrochen — neuer Versuch ($i/5) …"; sleep 2
+  done
+  if [ -f "$MODEL" ]; then
+    echo "Whisper-Modell bereit: $MODEL"
+  else
+    echo "WARNUNG: Whisper-Modell-Download fehlgeschlagen. Ohne Modell scheitert die Verarbeitung!"
+    echo "  Manuell nachholen: curl -L -o \"$MODEL\" \\"
+    echo "    \"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODELNAME\""
+    echo "  (Auf 8-GB-Macs reicht auch ggml-small.bin — dann in den Einstellungen den Modellpfad anpassen.)"
+  fi
 fi
 
 # 4) Sprecher-Diarisierung (mehrere Teilnehmer erkennen): venv + Modelle

@@ -10,7 +10,7 @@ import AppKit
 import AVFoundation
 
 let kConfigPath = NSString(string: "~/.config/callnotes/config.json").expandingTildeInPath
-let kAppVersion = "1.3.0"
+let kAppVersion = "1.3.1"
 let kRepoURL = "https://github.com/michaelczesun/callnotes"
 
 let isGerman: Bool = {
@@ -109,6 +109,7 @@ final class Store: ObservableObject {
     @Published var daemonRunning = false
     @Published var lastNotes: [String] = []
     @Published var failedCount = 0
+    @Published var failedReason: String? = nil
     @Published var updateAvailable: String? = nil
     @Published var currentCall: CurrentCall? = nil
     @Published var micActive: MicActive? = nil
@@ -522,8 +523,17 @@ final class Store: ObservableObject {
         let files = ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? [])
             .filter { $0.hasSuffix(".md") && $0 != "anrufe-moc.md" }.sorted().suffix(4)
         lastNotes = Array(files.reversed())
-        failedCount = ((try? FileManager.default.contentsOfDirectory(atPath: baseDir + "/failed")) ?? [])
-            .filter { !$0.hasPrefix(".") }.count
+        let failed = ((try? FileManager.default.contentsOfDirectory(atPath: baseDir + "/failed")) ?? [])
+            .filter { !$0.hasPrefix(".") }
+        failedCount = failed.count
+        // Grund der neuesten fehlgeschlagenen Verarbeitung (z. B. „Whisper-Modell fehlt")
+        // sichtbar machen — sonst weiss niemand, WARUM nichts rauskam.
+        if let newest = failed.sorted().last,
+           let r = try? String(contentsOfFile: baseDir + "/failed/" + newest + "/fail-reason.txt", encoding: .utf8) {
+            failedReason = r.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            failedReason = nil
+        }
     }
 
     // Sanfter Update-Hinweis (kein Auto-Updater): neuestes GitHub-Release vergleichen
@@ -1543,8 +1553,14 @@ struct MenuPanelView: View {
                 Card {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
-                        Text(L("\(store.failedCount) Aufnahme\(store.failedCount == 1 ? "" : "n") nicht verarbeitet", "\(store.failedCount) recording\(store.failedCount == 1 ? "" : "s") not processed"))
-                            .font(.callout)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L("\(store.failedCount) Aufnahme\(store.failedCount == 1 ? "" : "n") nicht verarbeitet", "\(store.failedCount) recording\(store.failedCount == 1 ? "" : "s") not processed"))
+                                .font(.callout)
+                            if let r = store.failedReason {
+                                Text(r).font(.caption2).foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
                         InfoTip(title: L("Nicht verarbeitet", "Not processed"),
                                 text: L("Diese Anrufe wurden aufgenommen, aber die Verarbeitung schlug fehl (z. B. Whisper-Modell fehlte, Absturz — oder die Aufnahme ist leer). „Erneut versuchen\u{201C} startet die Verarbeitung nochmal; schlägt sie wieder fehl, ist die Aufnahme vermutlich unbrauchbar → „Verwerfen\u{201C} löscht sie endgültig.", "These calls were recorded, but processing failed (e.g. missing Whisper model, a crash — or the recording is empty). \u{201C}Retry\u{201D} runs processing again; if it fails again, the recording is likely unusable → \u{201C}Discard\u{201D} deletes it for good."))
                         Spacer()

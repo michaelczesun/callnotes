@@ -101,6 +101,8 @@ fail() {
   say "FEHLER: $1"
   phase_done
   mkdir -p "$BASE/failed"
+  # Grund mit der Aufnahme mitwandern lassen, damit die App ihn zeigen kann
+  [ -d "$REC" ] && printf '%s\n' "$1" > "$REC/fail-reason.txt" 2>/dev/null
   case "$REC" in "$BASE/failed/"*) : ;; *) [ -d "$REC" ] && mv "$REC" "$BASE/failed/" 2>/dev/null ;; esac
   ntfy "Anruf-Verarbeitung fehlgeschlagen: $1 — Audio liegt in $BASE/failed/$(basename "$REC")" "Anruf-Notiz FEHLER"
   rm -rf "${LOCK:-}" 2>/dev/null
