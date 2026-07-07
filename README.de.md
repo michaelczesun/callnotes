@@ -211,6 +211,7 @@ bash callnotes-sync.sh      # Notizen + Audio auf die externe Platte spiegeln
 
 - 🐛 **Etwas kaputt?** Ein [Issue](https://github.com/michaelczesun/callnotes/issues) aufmachen — bitte mit deiner macOS-Version und dem, was das Panel oder `~/CallNotes/log/` gezeigt hat.
 - 💬 **Fragen, Ideen oder „hat einfach funktioniert"?** Ab in die [Discussions](https://github.com/michaelczesun/callnotes/discussions) — der Ort zum Kommentieren und Tipps austauschen.
+- 📋 **Was hat sich je Version geändert?** Siehe [Changelog](CHANGELOG.md) oder die [Releases-Seite](https://github.com/michaelczesun/callnotes/releases).
 
 ## FAQ
 

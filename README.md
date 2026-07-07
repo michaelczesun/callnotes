@@ -203,6 +203,7 @@ bash callnotes-sync.sh      # mirror notes + audio to the external drive
 
 - 🐛 **Something broke?** Open an [issue](https://github.com/michaelczesun/callnotes/issues) — please include your macOS version and what the panel or `~/CallNotes/log/` showed.
 - 💬 **Questions, ideas, or "it just worked"?** Head to [Discussions](https://github.com/michaelczesun/callnotes/discussions) — that's the place to comment and swap tips.
+- 📋 **What changed each version?** See the [changelog](CHANGELOG.md) or the [Releases page](https://github.com/michaelczesun/callnotes/releases).
 
 ## FAQ
 
