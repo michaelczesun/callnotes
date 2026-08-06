@@ -4,6 +4,13 @@ All notable changes to CallNotes (macOS). Newest first.
 Format follows [Keep a Changelog](https://keepachangelog.com); full notes per
 version are on the [Releases page](https://github.com/michaelczesun/callnotes/releases).
 
+## 1.3.3 — 2026-08-06
+### Fixed
+- **The summary no longer silently disappears.** If the primary Claude Code CLI
+  summarizer fails (most often its login/OAuth expired), CallNotes now names the
+  reason, **falls back to a configured API** (e.g. Groq) so a summary is still
+  produced, and sends an ntfy alert — instead of quietly writing a summary-less note.
+
 ## 1.3.2 — 2026-07-07
 ### Fixed (from an adversarial code audit)
 - **Data loss:** `./uninstall.sh --purge` deleted your notes and audio — the default
