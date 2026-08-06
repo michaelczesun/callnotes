@@ -364,8 +364,28 @@ PROMPT
     ( "$CLAUDE_BIN" -p --model sonnet < "$REC/prompt.txt" > "$SUMMARY" 2>>"$REC/claude.log" ) &
     local pid=$! w=0
     while kill -0 $pid 2>/dev/null && [ $w -lt 300 ]; do sleep 5; w=$((w+5)); done
-    if kill -0 $pid 2>/dev/null; then kill -9 $pid 2>/dev/null; say "  Claude-Timeout (300s)"; return 1; fi
-    wait $pid || return 1
+    kill -0 $pid 2>/dev/null && { kill -9 $pid 2>/dev/null; say "  Claude-Timeout (300s)"; }
+    if ! wait $pid 2>/dev/null || ! grep -q '^#' "$SUMMARY"; then
+      # Grund benennen (haeufigster Fall: CLI-Login abgelaufen) und LAUT warnen,
+      # statt still eine Notiz ohne Zusammenfassung zu bauen.
+      local why="Claude-Zusammenfassung fehlgeschlagen"
+      # Auth-Fehler von `claude -p` landen auf stdout (also in $SUMMARY), nicht nur im
+      # claude.log — deshalb beide pruefen.
+      grep -qi "authenticate\|OAuth\|session expired\|not logged in\|log in" "$REC/claude.log" "$SUMMARY" 2>/dev/null \
+        && why="Claude-Login abgelaufen — im Terminal 'claude' neu einloggen"
+      say "  $why"
+      # Fallback: konfigurierte KI-API (z.B. Groq), damit trotzdem eine Zusammenfassung entsteht.
+      if [ -n "$SUM_URL" ] && [ -n "$SUM_MODEL" ] && [ -n "$SUM_KEY" ]; then
+        say "  Fallback-Zusammenfassung via $SUM_MODEL …"
+        if summarize_openai && grep -q '^#' "$SUMMARY"; then
+          ntfy "$why — Zusammenfassung per Fallback ($SUM_MODEL) erstellt." "CallNotes"
+          return 0
+        fi
+        say "  Fallback-KI ebenfalls nicht erreichbar — Details in summarizer.log"
+      fi
+      ntfy "$why — Notiz ohne Zusammenfassung." "CallNotes"
+      return 1
+    fi
   fi
   grep -q '^#' "$SUMMARY" || return 1
 }
