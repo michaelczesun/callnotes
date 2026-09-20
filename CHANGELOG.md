@@ -4,6 +4,16 @@ All notable changes to CallNotes (macOS). Newest first.
 Format follows [Keep a Changelog](https://keepachangelog.com); full notes per
 version are on the [Releases page](https://github.com/michaelczesun/callnotes/releases).
 
+## 1.3.4 — 2026-09-20
+### Fixed
+- **Speaker diarization no longer invents dozens of speakers.** On a 1:1 call the
+  diarizer could report many voices (echo/noise/artifacts on the tapped track split
+  into tiny bogus clusters — 97 in one real case). Speakers are now weighted by total
+  talk time; only real participants count. Verified: a real call's caller track that
+  reported 97 now correctly reports 2 (and a true 1:1 collapses to 1).
+### Changed
+- Michael's transcriber default switched to **Parakeet** (no Whisper repetition loops).
+
 ## 1.3.3 — 2026-08-06
 ### Fixed
 - **The summary no longer silently disappears.** If the primary Claude Code CLI

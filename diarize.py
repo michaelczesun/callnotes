@@ -63,7 +63,43 @@ def main():
         {"start": round(s.start, 2), "end": round(s.end, 2), "speaker": s.speaker}
         for s in result
     ]
-    speakers = len({s["speaker"] for s in segments})
+
+    # Sprecher nach GESAMT-Redezeit gewichten. Winzige Cluster (Echo der eigenen
+    # Stimme im getappten Ton, Rauschen, Whisper-Artefakte) sind KEINE echten
+    # Teilnehmer — sonst "hoert" die Diarisierung bei einem 1:1-Anruf Dutzende Sprecher.
+    dur = {}
+    for s in segments:
+        dur[s["speaker"]] = dur.get(s["speaker"], 0.0) + (s["end"] - s["start"])
+    total = sum(dur.values()) or 1.0
+    MIN_DUR, MIN_SHARE = 4.0, 0.03  # echte Stimme: >=4s UND >=3% der Redezeit
+    significant = sorted(
+        (spk for spk, d in dur.items() if d >= MIN_DUR and d / total >= MIN_SHARE),
+        key=lambda spk: -dur[spk],
+    )
+
+    if len(significant) <= 1:
+        # ein realer Gegenueber -> keine Aufsplittung, alle Segmente auf Sprecher 0
+        for s in segments:
+            s["speaker"] = 0
+        speakers = 1
+    else:
+        remap = {spk: i for i, spk in enumerate(significant)}
+        sig_set = set(significant)
+        # (start, end, original_speaker) VOR dem Umnummerieren einfrieren
+        sig_segs = [(s["start"], s["end"], s["speaker"]) for s in segments if s["speaker"] in sig_set]
+        for s in segments:
+            if s["speaker"] in remap:
+                s["speaker"] = remap[s["speaker"]]
+            else:
+                # unbedeutendes Segment dem zeitlich naechsten echten Sprecher zuschlagen
+                mid = (s["start"] + s["end"]) / 2
+                st, en, best = min(
+                    sig_segs,
+                    key=lambda t: 0 if t[0] <= mid <= t[1] else min(abs(mid - t[0]), abs(mid - t[1])),
+                )
+                s["speaker"] = remap[best]
+        speakers = len(significant)
+
     json.dump({"speakers": speakers, "segments": segments}, sys.stdout)
     print()
 
