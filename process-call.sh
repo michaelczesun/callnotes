@@ -63,22 +63,24 @@ SECRETS="$HOME/.config/callnotes/secrets.env"
 [ -f "$SECRETS" ] || SECRETS="$HOME/.config/dasgeht/secrets.env"
 
 # Sprach-Weiche: Notiz-Skelett, Sprecher-Labels und Status-Phasen folgen der
-# Transkriptions-Sprache (language) — de = Deutsch, alles andere = Englisch.
+# Transkriptions-Sprache (language). App-Status und Push folgen separat uiLanguage.
 if [ "$LANG_CFG" = "de" ]; then
   [ -n "$SELF_LABEL" ] || SELF_LABEL="Ich"
   [ -n "$PEER_LABEL" ] || PEER_LABEL="Gesprächspartner"
   SPEAKER_PREFIX="Sprecher"
-  T_PH_TRANS="Transkription läuft…"; T_PH_DIA="Sprecher-Erkennung…"; T_PH_AI="KI-Zusammenfassung…"; T_PH_STORE="Archiv & Ablage…"
   T_TRANSCRIPT="Transkript"; T_CALL="Telefonat"
   T_AUDIO_NOTE="Audio-Archiv"; T_LEFT="links"; T_RIGHT="rechts"
 else
   [ -n "$SELF_LABEL" ] || SELF_LABEL="Me"
   [ -n "$PEER_LABEL" ] || PEER_LABEL="Caller"
   SPEAKER_PREFIX="Speaker"
-  T_PH_TRANS="Transcribing…"; T_PH_DIA="Detecting speakers…"; T_PH_AI="AI summary…"; T_PH_STORE="Archiving & delivery…"
   T_TRANSCRIPT="Transcript"; T_CALL="Call"
   T_AUDIO_NOTE="Audio archive"; T_LEFT="left"; T_RIGHT="right"
 fi
+
+# UI messages are independent of the spoken-language / note settings.
+UI_STRINGS=$(python3 "$SCRIPT_DIR/callnotes-ui.py" --config "$CFG" shell-strings) || exit 1
+eval "$UI_STRINGS"
 
 # Groq-Key: Config zuerst, sonst Tresor (secrets.env)
 GROQ_KEY="$GROQ_KEY_CFG"
@@ -87,7 +89,15 @@ if [ -z "$GROQ_KEY" ] && [ -f "$SECRETS" ]; then
 fi
 
 say() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
-ntfy() { [ -n "$NTFY_URL" ] && curl -s -m 10 -d "$1" -H "Title: ${2:-Anruf-Notiz}" "$NTFY_URL" >/dev/null 2>&1 || true; }
+ntfy() { [ -n "$NTFY_URL" ] && curl -s -m 10 -d "$1" -H "Title: ${2:-CallNotes}" "$NTFY_URL" >/dev/null 2>&1 || true; }
+
+# Resolve language again at notification time, including a mid-processing UI change.
+notify_ui() {
+  local NOTIFY_TITLE="" NOTIFY_BODY="" values
+  values=$(python3 "$SCRIPT_DIR/callnotes-ui.py" --config "$CFG" notify "$@") || return 1
+  eval "$values"
+  ntfy "$NOTIFY_BODY" "$NOTIFY_TITLE"
+}
 
 # Verarbeitungs-Status fuer die Menueleisten-App
 STATE_DIR="$BASE/state"
@@ -104,14 +114,14 @@ fail() {
   # Grund mit der Aufnahme mitwandern lassen, damit die App ihn zeigen kann
   [ -d "$REC" ] && printf '%s\n' "$1" > "$REC/fail-reason.txt" 2>/dev/null
   case "$REC" in "$BASE/failed/"*) : ;; *) [ -d "$REC" ] && mv "$REC" "$BASE/failed/" 2>/dev/null ;; esac
-  ntfy "Anruf-Verarbeitung fehlgeschlagen: $1 — Audio liegt in $BASE/failed/$(basename "$REC")" "Anruf-Notiz FEHLER"
+  notify_ui failed "$1" "$BASE/failed/$(basename "$REC")"
   rm -rf "${LOCK:-}" 2>/dev/null
   exit 1
 }
 
 [ -d "$REC" ] || { say "FEHLER: Verzeichnis fehlt: $REC"; exit 1; }
 if [ "$TRANSCRIBER" = "local" ]; then
-  [ -n "$MODEL" ] && [ -f "$MODEL" ] || fail "Whisper-Modell fehlt (config 'whisperModel'): ${MODEL:-nicht gesetzt}"
+  [ -n "$MODEL" ] && [ -f "$MODEL" ] || fail "$(python3 "$SCRIPT_DIR/callnotes-ui.py" --language "$UI_LANGUAGE" failure model "$MODEL")"
 fi
 
 # Lock: nur eine Verarbeitung gleichzeitig (whisper + claude sind RAM-/CPU-hungrig).
@@ -192,7 +202,7 @@ phase "$T_PH_TRANS"
 say "Transkribiere ($TRANSCRIBER, $LANG_CFG) …"
 transcribe mic.caf mic ""; MIC_OK=$?
 transcribe system.caf system keep; SYS_OK=$?
-[ $MIC_OK -ne 0 ] && [ $SYS_OK -ne 0 ] && fail "beide Spuren leer/nicht transkribierbar"
+[ $MIC_OK -ne 0 ] && [ $SYS_OK -ne 0 ] && fail "$T_FAIL_TRACKS"
 
 # --- Sprecher-Diarisierung der Gegenseite (mehrere Teilnehmer?) ------------------
 DIA_JSON="$REC/diarization.json"
@@ -215,7 +225,7 @@ if [ "$N_SPEAKERS" -gt 1 ]; then
 else
   python3 "$MERGE" "$REC/mic.json" "$REC/system.json" "$SELF_LABEL" "$PEER_LABEL" > "$DIALOG" 2>/dev/null
 fi
-[ -s "$DIALOG" ] || fail "Dialog-Merge leer"
+[ -s "$DIALOG" ] || fail "$T_FAIL_MERGE"
 WORDS=$(wc -w < "$DIALOG" | tr -d ' ')
 say "Transkript: $WORDS Woerter"
 
@@ -368,22 +378,22 @@ PROMPT
     if ! wait $pid 2>/dev/null || ! grep -q '^#' "$SUMMARY"; then
       # Grund benennen (haeufigster Fall: CLI-Login abgelaufen) und LAUT warnen,
       # statt still eine Notiz ohne Zusammenfassung zu bauen.
-      local why="Claude-Zusammenfassung fehlgeschlagen"
+      local why="Claude-Zusammenfassung fehlgeschlagen" why_code="failed"
       # Auth-Fehler von `claude -p` landen auf stdout (also in $SUMMARY), nicht nur im
       # claude.log — deshalb beide pruefen.
       grep -qi "authenticate\|OAuth\|session expired\|not logged in\|log in" "$REC/claude.log" "$SUMMARY" 2>/dev/null \
-        && why="Claude-Login abgelaufen — im Terminal 'claude' neu einloggen"
+        && { why="Claude-Login abgelaufen — im Terminal 'claude' neu einloggen"; why_code="login"; }
       say "  $why"
       # Fallback: konfigurierte KI-API (z.B. Groq), damit trotzdem eine Zusammenfassung entsteht.
       if [ -n "$SUM_URL" ] && [ -n "$SUM_MODEL" ] && [ -n "$SUM_KEY" ]; then
         say "  Fallback-Zusammenfassung via $SUM_MODEL …"
         if summarize_openai && grep -q '^#' "$SUMMARY"; then
-          ntfy "$why — Zusammenfassung per Fallback ($SUM_MODEL) erstellt." "CallNotes"
+          notify_ui summary "$why_code" "$SUM_MODEL"
           return 0
         fi
         say "  Fallback-KI ebenfalls nicht erreichbar — Details in summarizer.log"
       fi
-      ntfy "$why — Notiz ohne Zusammenfassung." "CallNotes"
+      notify_ui summary "$why_code" ""
       return 1
     fi
   fi
@@ -639,8 +649,6 @@ else
   say "m4a fehlgeschlagen — Rohaufnahme bleibt in $REC"
 fi
 
-EXTRA_PUSH=""
-[ "$N_SPEAKERS" -gt 1 ] && EXTRA_PUSH=" — $N_SPEAKERS Sprecher, Zuordnung in der CallNotes-Menueleiste"
-ntfy "📞 ${TITLE} (${DUR_MIN}min via $APP) → $(basename "$NOTE")$EXTRA_PUSH"
+notify_ui complete "$APP" "$DUR_MIN" "$N_SPEAKERS"
 phase_done
 say "FERTIG: $TITLE"

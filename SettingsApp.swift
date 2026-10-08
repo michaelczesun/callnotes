@@ -13,16 +13,23 @@ let kConfigPath = NSString(string: "~/.config/callnotes/config.json").expandingT
 let kAppVersion = "1.3.4"
 let kRepoURL = "https://github.com/michaelczesun/callnotes"
 
-let isGerman: Bool = {
-    if let o = ProcessInfo.processInfo.environment["CALLNOTES_LANG"] { return o.hasPrefix("de") }
-    // In-App-Wahl aus der Config ("uiLanguage": "de" | "en" | "system")
+// Capture before the process-local native-dialog override is installed.
+let systemUILanguages = Locale.preferredLanguages
+
+let appLanguage: String = {
+    var configured: String?
     if let data = try? Data(contentsOf: URL(fileURLWithPath: kConfigPath)),
-       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-       let lang = obj["uiLanguage"] as? String, lang == "de" || lang == "en" {
-        return lang == "de"
+       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        configured = obj["uiLanguage"] as? String
     }
-    return Locale.preferredLanguages.first?.hasPrefix("de") ?? false
+    return AppLanguage.resolve(configured: configured,
+                               override: ProcessInfo.processInfo.environment["CALLNOTES_LANG"],
+                               preferred: systemUILanguages)
 }()
+let isGerman = appLanguage == "de"
+let appText = AppText(language: appLanguage)
+let appLocale = Locale(identifier: appLanguage)
+
 func L(_ de: String, _ en: String) -> String { isGerman ? de : en }
 
 func tilde(_ p: String) -> String {
@@ -111,6 +118,7 @@ final class Store: ObservableObject {
     @Published var status = ""
     @Published var daemonRunning = false
     @Published var lastNotes: [String] = []
+    @Published var recentCallTitles: [String: String] = [:]
     @Published var failedCount = 0
     @Published var failedReason: String? = nil
     @Published var updateAvailable: String? = nil
@@ -277,7 +285,8 @@ final class Store: ObservableObject {
             if let list = try? RecordingAppList(configuration: raw) { recordingApps = list }
             return true
         } catch {
-            status = L("❌ Einstellungen nicht gespeichert: ", "❌ Settings were not saved: ") + error.localizedDescription
+            logDiagnostic("Saving settings", error.localizedDescription)
+            status = L("❌ Einstellungen nicht gespeichert: ", "❌ Settings were not saved: ") + appText.error(error)
             return false
         }
     }
@@ -285,6 +294,10 @@ final class Store: ObservableObject {
     private func refreshRecordingApps() {
         guard let list = try? RecordingAppList.read(from: URL(fileURLWithPath: configPath)) else { return }
         if recordingApps != list { recordingApps = list }
+    }
+
+    private func logDiagnostic(_ operation: String, _ detail: String) {
+        FileHandle.standardError.write(Data("[CallNotes] \(operation): \(detail)\n".utf8))
     }
 
     @discardableResult
@@ -342,8 +355,9 @@ final class Store: ObservableObject {
                 ? L("✅ Anruf-Liste gespeichert", "✅ Recording list saved")
                 : L("✅ Gespeichert — gilt nach der laufenden Aufnahme", "✅ Saved — applies after the current recording")
         } catch {
+            logDiagnostic("Saving recording list", error.localizedDescription)
             refreshRecordingApps()
-            status = L("❌ Anruf-Liste nicht gespeichert: ", "❌ Recording list was not saved: ") + error.localizedDescription
+            status = L("❌ Anruf-Liste nicht gespeichert: ", "❌ Recording list was not saved: ") + appText.error(error)
         }
     }
 
@@ -436,7 +450,7 @@ final class Store: ObservableObject {
             processingPhase = nil
             return
         }
-        processingPhase = obj["phase"] as? String
+        processingPhase = (obj["phase"] as? String).map(appText.phase)
     }
 
     private func pollPendings() {
@@ -528,7 +542,8 @@ final class Store: ObservableObject {
             guard let self else { return }
             let (code, out) = self.run(["/bin/bash", script, p.path, mapping])
             DispatchQueue.main.async {
-                self.status = code == 0 ? L("✅ Zuordnung übernommen", "✅ Names applied") : L("❌ Zuordnung fehlgeschlagen: \(out.suffix(140))", "❌ Applying names failed: \(out.suffix(140))")
+                if code != 0 { self.logDiagnostic("Applying names", out) }
+                self.status = code == 0 ? L("✅ Zuordnung übernommen", "✅ Names applied") : L("❌ Namen konnten nicht übernommen werden (Code \(code)). Details stehen im App-Protokoll.", "❌ Could not apply names (exit \(code)). See the app log for details.")
                 self.poll()
             }
         }
@@ -544,6 +559,19 @@ final class Store: ObservableObject {
         let files = ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? [])
             .filter { $0.hasSuffix(".md") && $0 != "anrufe-moc.md" }.sorted().suffix(4)
         lastNotes = Array(files.reversed())
+        var titles: [String: String] = [:]
+        for name in lastNotes {
+            var app: String?
+            if let contents = try? String(contentsOfFile: dir + "/" + name, encoding: .utf8),
+               contents.hasPrefix("---\n") {
+                let header = contents.split(separator: "\n").dropFirst().prefix { $0 != "---" }
+                if let line = header.first(where: { $0.hasPrefix("app:") }) {
+                    app = String(line.dropFirst(4)).trimmingCharacters(in: CharacterSet(charactersIn: " \"'"))
+                }
+            }
+            titles[name] = appText.recentCall(name, appName: app)
+        }
+        if recentCallTitles != titles { recentCallTitles = titles }
         let failed = ((try? FileManager.default.contentsOfDirectory(atPath: baseDir + "/failed")) ?? [])
             .filter { !$0.hasPrefix(".") }
         failedCount = failed.count
@@ -551,7 +579,7 @@ final class Store: ObservableObject {
         // sichtbar machen — sonst weiss niemand, WARUM nichts rauskam.
         if let newest = failed.sorted().last,
            let r = try? String(contentsOfFile: baseDir + "/failed/" + newest + "/fail-reason.txt", encoding: .utf8) {
-            failedReason = r.trimmingCharacters(in: .whitespacesAndNewlines)
+            failedReason = appText.failureReason(r)
         } else {
             failedReason = nil
         }
@@ -604,13 +632,10 @@ final class Store: ObservableObject {
     // Sprachwechsel: speichern und — falls sich die effektive Sprache aendert —
     // die App blitzschnell selbst neu starten (die Texte werden beim Start aufgeloest).
     func applyLanguageChange() {
-        _ = persist()
-        let newIsGerman: Bool
-        switch uiLanguage {
-        case "de": newIsGerman = true
-        case "en": newIsGerman = false
-        default: newIsGerman = Locale.preferredLanguages.first?.hasPrefix("de") ?? false
-        }
+        guard persist() else { return }
+        let newIsGerman = AppLanguage.resolve(configured: uiLanguage,
+                                              override: ProcessInfo.processInfo.environment["CALLNOTES_LANG"],
+                                              preferred: systemUILanguages) == "de"
         guard newIsGerman != isGerman else { return }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/open")
@@ -627,7 +652,9 @@ final class Store: ObservableObject {
         guard persist() else { status = L("❌ Config nicht schreibbar", "❌ Config not writable"); return }
         let (code, out) = run(["/bin/launchctl", "kickstart", "-k", "gui/\(getuid())/at.dasgeht.callwatch"])
         refreshDaemon()
-        status = code == 0 ? L("✅ Gespeichert & Daemon neu gestartet", "✅ Saved & daemon restarted") : "⚠️ \(out.trimmingCharacters(in: .whitespacesAndNewlines))"
+        if code != 0 { logDiagnostic("Restarting recorder", out) }
+        status = code == 0 ? L("✅ Gespeichert & Daemon neu gestartet", "✅ Saved & daemon restarted")
+            : L("❌ Recorder-Neustart fehlgeschlagen (Code \(code)). Details stehen im App-Protokoll.", "❌ Recorder restart failed (exit \(code)). See the app log for details.")
     }
 
     func syncNow() {
@@ -640,7 +667,8 @@ final class Store: ObservableObject {
             guard let self else { return }
             let (code, out) = self.run(["/bin/bash", script])
             DispatchQueue.main.async {
-                self.status = code == 0 ? L("✅ Kopiert nach \(tilde(self.mirrorDir))", "✅ Copied to \(tilde(self.mirrorDir))") : L("❌ Kopieren fehlgeschlagen: \(out.suffix(140))", "❌ Copy failed: \(out.suffix(140))")
+                if code != 0 { self.logDiagnostic("Copying notes", out) }
+                self.status = code == 0 ? L("✅ Kopiert nach \(tilde(self.mirrorDir))", "✅ Copied to \(tilde(self.mirrorDir))") : L("❌ Kopieren fehlgeschlagen (Code \(code)). Details stehen im App-Protokoll.", "❌ Copy failed (exit \(code)). See the app log for details.")
             }
         }
     }
@@ -654,7 +682,7 @@ final class CallPopupPanel {
 
     func show(store: Store) {
         hide()
-        let view = NSHostingView(rootView: CallPopupView().environmentObject(store))
+        let view = NSHostingView(rootView: CallPopupView().environmentObject(store).environment(\.locale, appLocale))
         let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 10),
                         styleMask: [.titled, .closable, .nonactivatingPanel, .utilityWindow],
                         backing: .buffered, defer: false)
@@ -714,7 +742,7 @@ final class HelpWindow {
 
     func show(store: Store) {
         if let w = window { w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
-        let view = NSHostingView(rootView: HelpView().environmentObject(store))
+        let view = NSHostingView(rootView: HelpView().environmentObject(store).environment(\.locale, appLocale))
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 620),
                          styleMask: [.titled, .closable, .resizable],
                          backing: .buffered, defer: false)
@@ -842,7 +870,7 @@ final class SetupWizard {
         let view = NSHostingView(rootView: WizardView(close: { [weak self] in
             self?.window?.close()
             self?.window = nil
-        }).environmentObject(store))
+        }).environmentObject(store).environment(\.locale, appLocale))
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
                          styleMask: [.titled, .closable],
                          backing: .buffered, defer: false)
@@ -900,11 +928,11 @@ struct WizardView: View {
                         .font(.callout.weight(.medium))
                 }
                 HStack(spacing: 8) {
-                    Text(L("Sprache / Language:", "Language / Sprache:")).font(.caption).foregroundColor(.secondary)
+                    Text(L("Sprache:", "Language:")).font(.caption).foregroundColor(.secondary)
                     Picker("", selection: $store.uiLanguage) {
                         Text("System").tag("system")
-                        Text("Deutsch").tag("de")
-                        Text("English").tag("en")
+                        Text(L("Deutsch", "German")).tag("de")
+                        Text(L("Englisch", "English")).tag("en")
                     }
                     .pickerStyle(.segmented).labelsHidden().frame(width: 240)
                     .onChange(of: store.uiLanguage) { _ in store.applyLanguageChange() }
@@ -1211,8 +1239,8 @@ struct PendingView: View {
                         Image(systemName: "play.circle.fill").font(.title2).foregroundColor(.indigo)
                     }
                     .buttonStyle(.plain)
-                    .help(L("Hörprobe \(s.label) (\(Int(s.totalSec))s Redezeit)", "Voice sample \(s.label) (\(Int(s.totalSec))s talk time)"))
-                    Text(s.label).font(.callout).frame(width: 74, alignment: .leading)
+                    .help(L("Hörprobe \(appText.speaker(s.label)) (\(Int(s.totalSec))s Redezeit)", "Voice sample \(appText.speaker(s.label)) (\(Int(s.totalSec))s talk time)"))
+                    Text(appText.speaker(s.label)).font(.callout).frame(width: 74, alignment: .leading)
                     Picker("", selection: Binding(
                         get: { store.picks[k] ?? kKeep },
                         set: { store.picks[k] = $0 }
@@ -1275,6 +1303,7 @@ struct PathRow: View {
                 panel.canChooseFiles = false
                 panel.canChooseDirectories = true
                 panel.canCreateDirectories = true
+                panel.title = L("Ordner auswählen", "Choose folder")
                 panel.prompt = L("Auswählen", "Choose")
                 if !path.isEmpty { panel.directoryURL = URL(fileURLWithPath: untilde(path)) }
                 if panel.runModal() == .OK, let url = panel.url { path = tilde(url.path) }
@@ -1355,8 +1384,8 @@ struct SettingsSection: View {
             }
             Picker("", selection: $store.uiLanguage) {
                 Text("System").tag("system")
-                Text("Deutsch").tag("de")
-                Text("English").tag("en")
+                Text(L("Deutsch", "German")).tag("de")
+                Text(L("Englisch", "English")).tag("en")
             }
             .pickerStyle(.segmented).labelsHidden()
             .onChange(of: store.uiLanguage) { _ in store.applyLanguageChange() }
@@ -1689,7 +1718,7 @@ struct MenuPanelView: View {
                         Button { store.openNote(n) } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "doc.text").foregroundColor(.indigo)
-                                Text(n).font(.caption).lineLimit(1).truncationMode(.middle)
+                                Text(store.recentCallTitles[n] ?? appText.recentCall(n, appName: nil)).font(.caption).lineLimit(1).truncationMode(.middle)
                                 Spacer()
                                 Image(systemName: "arrow.up.right").font(.caption2).foregroundColor(.secondary)
                             }
@@ -1738,7 +1767,7 @@ final class ShowcaseWindow {
     static func show(store: Store, mode: String) {
         NSApp.appearance = NSAppearance(named: .darkAqua) // Screenshots immer im Dark Mode
         let root = MenuPanelView(startWithSettings: mode == "settings", unlimited: true)
-            .environmentObject(store)
+            .environmentObject(store).environment(\.locale, appLocale)
             .background(Color(nsColor: .windowBackgroundColor))
         let hc = NSHostingController(rootView: root)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 700),
@@ -1796,7 +1825,7 @@ final class StandalonePanel {
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity)
             .background(Color(nsColor: .underPageBackgroundColor))
-            MenuPanelView(unlimited: true).environmentObject(store)
+            MenuPanelView(unlimited: true).environmentObject(store).environment(\.locale, appLocale)
         }
         // ScrollView hat keine intrinsische Hoehe — ohne festen Frame kollabiert
         // das Fenster auf die Kopfzeile (Tester-/Michael-Screenshot 4.7.)
@@ -1822,12 +1851,20 @@ final class StandalonePanel {
 @main
 #endif
 struct CallNotesApp: App {
+    init() {
+        // Process-local override: native app dialogs follow the selected language
+        // without changing the user's macOS or persistent app language settings.
+        var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        arguments["AppleLanguages"] = [appLanguage]
+        UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+    }
+
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var store = Store(showcase: ProcessInfo.processInfo.environment["CALLNOTES_SHOWCASE"])
 
     var body: some Scene {
         MenuBarExtra {
-            MenuPanelView().environmentObject(store)
+            MenuPanelView().environmentObject(store).environment(\.locale, appLocale)
         } label: {
             Image(systemName: menuSymbol)
         }

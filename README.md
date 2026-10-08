@@ -157,6 +157,15 @@ an app whose individual entry is off. Other settings still use **Save & restart*
 Run the recording-list regression tests with `bash tests/run-recording-apps.sh`
 (Xcode Command Line Tools required; tests use temporary configurations, no recording).
 
+The selected interface language also controls progress messages, default speaker
+labels, error explanations, and notification text. It is independent of the
+transcription/note language (`language`). Existing German processing state and
+speaker labels are translated for display; stored speaker identifiers, notes,
+participant names, and paths remain intact.
+
+Run localization checks with `bash tests/run-localization.sh`; notification tests
+capture output locally and do not send notifications.
+
 | Key | What it does |
 |---|---|
 | `apps` | bundle IDs that trigger recording |
