@@ -18,7 +18,7 @@ mkdir -p "$USER_APPS"
 # --- calltap.app ---------------------------------------------------------------
 APP="$USER_APPS/calltap.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-swiftc -O calltap.swift -o "$APP/Contents/MacOS/calltap" \
+swiftc -O -parse-as-library calltap.swift RecordingApps.swift -o "$APP/Contents/MacOS/calltap" \
   -framework CoreAudio -framework AudioToolbox -framework AVFoundation -framework Foundation
 cp calltap-Info.plist "$APP/Contents/Info.plist"
 cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns" 2>/dev/null || true
@@ -28,7 +28,7 @@ echo "OK: $APP"
 # --- CallNotes.app (Menueleiste) -------------------------------------------------
 APP2="$APPS/CallNotes.app"
 mkdir -p "$APP2/Contents/MacOS" "$APP2/Contents/Resources"
-swiftc -O -parse-as-library SettingsApp.swift -o "$APP2/Contents/MacOS/CallNotes" \
+swiftc -O -parse-as-library SettingsApp.swift RecordingApps.swift -o "$APP2/Contents/MacOS/CallNotes" \
   -framework SwiftUI -framework AppKit -framework AVFoundation -framework Foundation
 cp CallNotes-Info.plist "$APP2/Contents/Info.plist"
 cp assets/AppIcon.icns "$APP2/Contents/Resources/AppIcon.icns" 2>/dev/null || true

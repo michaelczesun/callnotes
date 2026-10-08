@@ -434,7 +434,7 @@ struct WatchConfig {
             throw CalltapError("Config ist kein JSON-Objekt: \(path)")
         }
         var c = WatchConfig()
-        if let v = obj["apps"] as? [String] { c.apps = v }
+        c.apps = try RecordingAppList(configuration: obj).enabled
         if let v = obj["minSeconds"] as? Int { c.minSeconds = v }
         if let v = obj["stopGraceSeconds"] as? Int { c.stopGraceSeconds = v }
         if let v = obj["maxHours"] as? Double { c.maxHours = v }
@@ -445,14 +445,7 @@ struct WatchConfig {
         return c
     }
 
-    func matches(_ bundle: String) -> Bool {
-        for pattern in apps {
-            if pattern == "*" { return true }
-            if pattern.hasSuffix("*"), bundle.hasPrefix(String(pattern.dropLast())) { return true }
-            if bundle == pattern { return true }
-        }
-        return false
-    }
+
 }
 
 func expand(_ p: String) -> String { (p as NSString).expandingTildeInPath }
@@ -571,6 +564,9 @@ func cmdWatch(configPath: String) {
         log("FEHLER Config: \(error)")
         exit(1)
     }
+    let listConfigURL = URL(fileURLWithPath: expand(configPath))
+    var recordingApps = RecordingAppReload(enabled: cfg.apps)
+    var listReadError: String?
     let base = URL(fileURLWithPath: expand(cfg.outDir))
     let recBase = base.appendingPathComponent("rec")
     let stateDir = base.appendingPathComponent("state")
@@ -730,6 +726,19 @@ func cmdWatch(configPath: String) {
             discard(s)
         }
 
+        do {
+            if try recordingApps.reload(from: listConfigURL, isRecording: session != nil) {
+                loggedUnknown.removeAll()
+                lastStartError = nil
+                log("Anruf-Liste aktualisiert: \(recordingApps.enabled.joined(separator: ", "))")
+            }
+            if session == nil { listReadError = nil }
+        } catch {
+            let message = error.localizedDescription
+            if listReadError != message { log("WARNUNG: Anruf-Liste nicht geladen: \(message)") }
+            listReadError = message
+        }
+
         var active: (AudioObjectID, String)? = nil
         var micApp: (bundle: String, name: String, listed: Bool)? = nil
         for p in processObjects() {
@@ -738,7 +747,7 @@ func cmdWatch(configPath: String) {
             // Nie auf sich selbst triggern — direkt gestartete Binaries haben in
             // CoreAudio KEINE Bundle-ID, deshalb zusaetzlich der Prozessname.
             if bundle == "at.dasgeht.calltap" || processName(procPID(p)) == "calltap" { continue }
-            let listed = cfg.matches(bundle)
+            let listed = recordingApps.matches(bundle)
             // Erste mikro-aktive App fuer den Live-Monitor merken; eine gelistete
             // App hat Vorrang (die wird ja ohnehin gleich aufgenommen).
             if micApp == nil || (listed && !(micApp?.listed ?? true)) {
@@ -833,32 +842,39 @@ func usage() -> Never {
 
 let args = Array(CommandLine.arguments.dropFirst())
 
-// Doppelklick im Finder (keine Argumente, kein Terminal): calltap ist der
-// unsichtbare Recorder — stattdessen die CallNotes-Oberflaeche oeffnen.
-if args.isEmpty && isatty(0) == 0 {
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    p.arguments = ["-b", "at.dasgeht.callnotes"]
-    try? p.run()
-    exit(0)
-}
-guard let cmd = args.first else { usage() }
+#if !CALLNOTES_TESTING
+@main
+#endif
+struct CalltapMain {
+    static func main() {
+        // Doppelklick im Finder (keine Argumente, kein Terminal): calltap ist der
+        // unsichtbare Recorder — stattdessen die CallNotes-Oberflaeche oeffnen.
+        if args.isEmpty && isatty(0) == 0 {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            p.arguments = ["-b", "at.dasgeht.callnotes"]
+            try? p.run()
+            exit(0)
+        }
+        guard let cmd = args.first else { usage() }
 
-func flagValue(_ name: String) -> String? {
-    guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
-    return args[i + 1]
-}
+        func flagValue(_ name: String) -> String? {
+            guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
+            return args[i + 1]
+        }
 
-switch cmd {
-case "procs":
-    cmdProcs(watchMode: args.contains("--watch"))
-case "setup":
-    cmdSetup()
-case "record":
-    guard let out = flagValue("--out") else { usage() }
-    cmdRecord(out: out, seconds: flagValue("--seconds").flatMap { Int($0) }, bundle: flagValue("--bundle"))
-case "watch":
-    cmdWatch(configPath: flagValue("--config") ?? "~/.config/callnotes/config.json")
-default:
-    usage()
+        switch cmd {
+        case "procs":
+            cmdProcs(watchMode: args.contains("--watch"))
+        case "setup":
+            cmdSetup()
+        case "record":
+            guard let out = flagValue("--out") else { usage() }
+            cmdRecord(out: out, seconds: flagValue("--seconds").flatMap { Int($0) }, bundle: flagValue("--bundle"))
+        case "watch":
+            cmdWatch(configPath: flagValue("--config") ?? "~/.config/callnotes/config.json")
+        default:
+            usage()
+        }
+    }
 }

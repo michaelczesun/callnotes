@@ -146,9 +146,21 @@ are also logged automatically).
 Everything is in `~/.config/callnotes/config.json` — or just use the menu bar
 settings. Highlights:
 
+Open **Settings → Recording apps** in the menu-bar app to turn entries on or off.
+Switches save automatically; the recorder applies changes within a few seconds
+while idle, or after the current recording finishes. Disabled entries stay visible
+across app restarts. The common-app catalogue does not enable new apps automatically.
+Use **Always record this app** in the microphone monitor to add a new app.
+A trailing `*` matches related processes; another enabled pattern can still match
+an app whose individual entry is off. Other settings still use **Save & restart**.
+
+Run the recording-list regression tests with `bash tests/run-recording-apps.sh`
+(Xcode Command Line Tools required; tests use temporary configurations, no recording).
+
 | Key | What it does |
 |---|---|
 | `apps` | bundle IDs that trigger recording |
+| `disabledApps` | disabled patterns retained by the settings UI; not a denylist |
 | `tapScope` | `app` = record only the call app family (default), `global` = all system audio |
 | `transcriber` / `groqApiKey` | `local` (whisper.cpp), `parakeet` (fastest, `./install.sh --with-parakeet`) or `groq` (cloud) |
 | `summarizer` (+ `summarizerUrl/Model/ApiKey`) | `claude` (Claude Code CLI), `openai` (any OpenAI-compatible API incl. Ollama/Groq/OpenRouter) or `off` |
