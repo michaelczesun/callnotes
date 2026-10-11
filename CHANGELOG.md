@@ -4,6 +4,13 @@ All notable changes to CallNotes (macOS). Newest first.
 Format follows [Keep a Changelog](https://keepachangelog.com); full notes per
 version are on the [Releases page](https://github.com/michaelczesun/callnotes/releases).
 
+## 1.5.1 — 2026-10-11
+### Fixed
+- Installs created from the old example config carried `"diarizeThreshold": 0.6`, the
+  default of the previous speaker detection, which means something different now and
+  made the new detection less reliable. `0.6` is now treated like "not set" (→ `0.4`);
+  other values you chose are kept. `config.example.json` ships `0.4`.
+
 ## 1.5.0 — 2026-10-11
 Big reliability and resource overhaul, measured on real call recordings (11-138 min).
 ### Fixed

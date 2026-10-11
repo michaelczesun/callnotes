@@ -24,7 +24,7 @@
   "whisperModel": "~/models/ggml-large-v3-turbo-q5_0.bin",
   "language": "de",
   "diarize": true,
-  "diarizeThreshold": 0.6,
+  "diarizeThreshold": 0.4,
   "summarizer": "claude",
   "summarizerUrl": "",
   "summarizerModel": "",
