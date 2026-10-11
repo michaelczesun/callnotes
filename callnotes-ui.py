@@ -68,13 +68,18 @@ def localize_failure(raw, language):
 
 def notification(kind, language, args):
     if kind == "complete":
-        app, minutes, speakers = args
+        app, minutes, speakers = args[:3]
+        # Optional 4th argument: the note's own title (user content, like the transcript),
+        # shown verbatim as the first line — it says at a glance what the call was about.
+        note_title = args[3].strip() if len(args) > 3 else ""
         if app in ("unbekannt", "unknown"):
             app = choose(language, "unbekannte App", "unknown app")
         title = choose(language, "Anruf-Notiz fertig", "Call note ready")
         body = choose(language, f"Anruf via {app} ({minutes} Min.).", f"Call via {app} ({minutes} min).")
         if int(speakers) > 1:
             body += choose(language, f" {speakers} Stimmen; Namen in CallNotes zuordnen.", f" {speakers} speakers; assign names in CallNotes.")
+        if note_title:
+            body = f"{note_title}\n{body}"
         return title, body
     if kind == "failed":
         reason, path = args

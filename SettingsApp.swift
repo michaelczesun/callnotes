@@ -10,7 +10,7 @@ import AppKit
 import AVFoundation
 
 let kConfigPath = NSString(string: "~/.config/callnotes/config.json").expandingTildeInPath
-let kAppVersion = "1.3.4"
+let kAppVersion = "1.4.0"
 let kRepoURL = "https://github.com/michaelczesun/callnotes"
 
 // Capture before the process-local native-dialog override is installed.

@@ -35,6 +35,12 @@ class NotificationTests(unittest.TestCase):
         self.assertEqual(body, "Call via WhatsApp (25 min). 2 speakers; assign names in CallNotes.")
         self.assertEqual(ui.notification("complete", "en", ["Zoom", "1", "1"])[1], "Call via Zoom (1 min).")
 
+    def test_completion_shows_the_notes_own_title_verbatim(self):
+        title, body = ui.notification("complete", "en", ["WhatsApp", "25", "1", "Telefonat SteadyMate (AIOS)"])
+        self.assertEqual(title, "Call note ready")
+        self.assertEqual(body, "Telefonat SteadyMate (AIOS)\nCall via WhatsApp (25 min).")
+        self.assertEqual(ui.notification("complete", "de", ["Zoom", "3", "1", "  "])[1], "Anruf via Zoom (3 Min.).")
+
     def test_failure_messages(self):
         self.assertEqual(ui.failure("model", "en", ""), "Whisper model missing (whisperModel): not configured")
         self.assertEqual(ui.failure("tracks", "en"), "Both audio tracks are empty or could not be transcribed.")

@@ -4,6 +4,31 @@ All notable changes to CallNotes (macOS). Newest first.
 Format follows [Keep a Changelog](https://keepachangelog.com); full notes per
 version are on the [Releases page](https://github.com/michaelczesun/callnotes/releases).
 
+## 1.4.0 — 2026-10-11
+First outside contributions — thank you **[@joaomotap](https://github.com/joaomotap)** (João Mota)!
+### Added
+- **Recording-app switches** in Settings → Recording apps
+  ([#1](https://github.com/michaelczesun/callnotes/pull/1), @joaomotap): turn any app on or
+  off without editing JSON. Switches save instantly; the recorder picks up the new list
+  within seconds while idle and never changes it mid-recording. Disabled entries stay
+  visible (`disabledApps`), and the config is now written atomically with private
+  permissions.
+### Fixed
+- **Interface language is fully independent of the transcription language**
+  ([#2](https://github.com/michaelczesun/callnotes/pull/2), @joaomotap): progress,
+  default speaker labels, error explanations and push notifications follow the selected
+  interface language, even when calls are transcribed in German. Notes, transcripts and
+  participant names stay untouched.
+- Completion pushes show the note's own title again (what the call was about) as the
+  first line.
+- **Menu bar app no longer disappears after an update.** `build.sh` overwrote the app
+  binaries in place; macOS then killed the first launch with "Code Signature Invalid"
+  (the recorder recovered on its own, the menu bar app stayed gone until the next
+  login). Binaries are now replaced as new files.
+### Tests
+- First regression suites: `bash tests/run-recording-apps.sh` and
+  `bash tests/run-localization.sh` (97 checks, temporary configs, no recording, no pushes).
+
 ## 1.3.4 — 2026-09-20
 ### Fixed
 - **Speaker diarization no longer invents dozens of speakers.** On a 1:1 call the

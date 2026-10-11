@@ -649,6 +649,6 @@ else
   say "m4a fehlgeschlagen — Rohaufnahme bleibt in $REC"
 fi
 
-notify_ui complete "$APP" "$DUR_MIN" "$N_SPEAKERS"
+notify_ui complete "$APP" "$DUR_MIN" "$N_SPEAKERS" "$TITLE"
 phase_done
 say "FERTIG: $TITLE"
