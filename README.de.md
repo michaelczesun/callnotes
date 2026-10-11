@@ -152,9 +152,23 @@ Anrufs (unbekannte Apps landen automatisch im Log).
 Alles liegt in `~/.config/callnotes/config.json` — oder du nutzt einfach die
 Einstellungen in der Menüleiste. Die wichtigsten Felder:
 
+Unter **Einstellungen → Anruf-Liste** lassen sich Einträge ein- und ausschalten.
+Die Schalter speichern automatisch. Der Recorder übernimmt Änderungen im Leerlauf
+innerhalb weniger Sekunden oder nach Ende der laufenden Aufnahme. Deaktivierte
+Einträge bleiben auch nach einem App-Neustart sichtbar. Die Liste bekannter Apps
+aktiviert keine neuen Apps automatisch. Neue Apps lassen sich im Mikrofon-Monitor
+über **Diese App immer aufnehmen** hinzufügen.
+Ein abschließendes `*` erfasst verwandte Prozesse; ein anderes aktiviertes Muster
+kann dieselbe App weiterhin erfassen. Andere Einstellungen werden weiterhin über
+**Speichern & Neustart** übernommen.
+
+Regressionstests: `bash tests/run-recording-apps.sh` (Xcode Command Line Tools nötig;
+Tests verwenden temporäre Konfigurationen und starten keine Aufnahme).
+
 | Feld | Bedeutung |
 |---|---|
 | `apps` | Bundle-IDs, deren Mikrofon-Nutzung eine Aufnahme startet |
+| `disabledApps` | deaktivierte Muster für die Einstellungsansicht; keine Sperrliste |
 | `tapScope` | `app` = nur die Call-App-Familie aufnehmen (Default), `global` = gesamtes Systemaudio |
 | `transcriber` / `groqApiKey` | `local` (whisper.cpp), `parakeet` (am schnellsten, `./install.sh --with-parakeet`) oder `groq` (Cloud) |
 | `summarizer` (+ `summarizerUrl/Model/ApiKey`) | `claude` (Claude Code CLI), `openai` (jede OpenAI-kompatible API inkl. Ollama/Groq/OpenRouter) oder `off` |

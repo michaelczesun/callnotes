@@ -82,6 +82,9 @@ struct PendingCall: Identifiable {
 // MARK: - Store
 
 final class Store: ObservableObject {
+    @Published var recordingApps = RecordingAppList()
+    private let configPath: String
+
     // Speicherorte
     @Published var notesDir = "~/CallNotes/notes"
     @Published var audioDir = "~/CallNotes/audio"
@@ -134,7 +137,8 @@ final class Store: ObservableObject {
     private var poppedFor = ""
     private var tick = 0
 
-    init(showcase: String? = nil) {
+    init(configPath: String = kConfigPath, showcase: String? = nil) {
+        self.configPath = configPath
         load()
         if let mode = showcase {
             setupDemo(mode)
@@ -165,6 +169,8 @@ final class Store: ObservableObject {
         updateAvailable = nil
         // ALLE Werte neutral ueberschreiben — Screenshots landen im public Repo,
         // hier darf nichts aus der echten Config durchsickern (ntfy-Topic, Keys!)
+        recordingApps = RecordingAppList(enabled: ["com.apple.FaceTime", "net.whatsapp.WhatsApp", "us.zoom.xos"],
+                                         disabled: ["example.custom.call.helper.with.a.long.bundle.identifier*"])
         notesDir = "~/CallNotes/notes"
         audioDir = "~/CallNotes/audio"
         mirrorDir = "/Volumes/Backup/CallNotes"
@@ -208,9 +214,10 @@ final class Store: ObservableObject {
     }
 
     func load() {
-        if let data = try? Data(contentsOf: URL(fileURLWithPath: kConfigPath)),
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             raw = obj
+            if let list = try? RecordingAppList(configuration: obj) { recordingApps = list }
             notesDir = obj["notesDir"] as? String ?? notesDir
             audioDir = obj["audioDir"] as? String ?? audioDir
             mirrorDir = obj["mirrorDir"] as? String ?? ""
@@ -245,36 +252,39 @@ final class Store: ObservableObject {
     }
 
     func persist() -> Bool {
-        raw["notesDir"] = notesDir
-        raw["audioDir"] = audioDir
-        raw["mirrorDir"] = mirrorDir
-        raw["transcriber"] = transcriber
-        raw["groqApiKey"] = groqApiKey
-        raw["summarizer"] = summarizer
-        raw["summarizerUrl"] = sumUrl
-        raw["summarizerModel"] = sumModel
-        raw["summarizerApiKey"] = sumKey
-        raw["noteSections"] = Array(sections).sorted()
-        raw["destinations"] = ["appleNotes": destNotes, "nextcloud": destNextcloud, "notion": destNotion]
-        raw["nextcloudUrl"] = ncUrl
-        raw["nextcloudUser"] = ncUser
-        raw["nextcloudAppPass"] = ncPass
-        raw["notionToken"] = notionToken
-        raw["notionParent"] = notionParent
-        raw["ntfyUrl"] = ntfyUrl
-        raw["uiLanguage"] = uiLanguage
-        raw["setupDone"] = setupDone
-        guard let d = try? JSONSerialization.data(withJSONObject: raw, options: [.prettyPrinted, .sortedKeys]) else { return false }
-        let dir = (kConfigPath as NSString).deletingLastPathComponent
-        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        var updates: [String: Any] = [:]
+        updates["notesDir"] = notesDir
+        updates["audioDir"] = audioDir
+        updates["mirrorDir"] = mirrorDir
+        updates["transcriber"] = transcriber
+        updates["groqApiKey"] = groqApiKey
+        updates["summarizer"] = summarizer
+        updates["summarizerUrl"] = sumUrl
+        updates["summarizerModel"] = sumModel
+        updates["summarizerApiKey"] = sumKey
+        updates["noteSections"] = Array(sections).sorted()
+        updates["destinations"] = ["appleNotes": destNotes, "nextcloud": destNextcloud, "notion": destNotion]
+        updates["nextcloudUrl"] = ncUrl
+        updates["nextcloudUser"] = ncUser
+        updates["nextcloudAppPass"] = ncPass
+        updates["notionToken"] = notionToken
+        updates["notionParent"] = notionParent
+        updates["ntfyUrl"] = ntfyUrl
+        updates["uiLanguage"] = uiLanguage
+        updates["setupDone"] = setupDone
         do {
-            // atomar schreiben — der Daemon/die Pipeline darf nie eine halbe JSON sehen
-            let tmp = URL(fileURLWithPath: kConfigPath + ".tmp")
-            try d.write(to: tmp)
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tmp.path)
-            _ = try FileManager.default.replaceItemAt(URL(fileURLWithPath: kConfigPath), withItemAt: tmp)
+            raw = try RecordingAppList.saveSettings(updates, at: URL(fileURLWithPath: configPath))
+            if let list = try? RecordingAppList(configuration: raw) { recordingApps = list }
             return true
-        } catch { return false }
+        } catch {
+            status = L("❌ Einstellungen nicht gespeichert: ", "❌ Settings were not saved: ") + error.localizedDescription
+            return false
+        }
+    }
+
+    private func refreshRecordingApps() {
+        guard let list = try? RecordingAppList.read(from: URL(fileURLWithPath: configPath)) else { return }
+        if recordingApps != list { recordingApps = list }
     }
 
     @discardableResult
@@ -298,6 +308,7 @@ final class Store: ObservableObject {
 
     func poll() {
         pollCurrentCall()
+        refreshRecordingApps()
         pollMicActive()
         pollPendings()
         pollProcessing()
@@ -321,21 +332,24 @@ final class Store: ObservableObject {
         if micActive != m { micActive = m }
     }
 
-    // Unbekannte mikro-aktive App per Klick dauerhaft aufnehmen: in die apps-Liste
-    // aufnehmen, Config speichern, Daemon neu laden (sonst greift die neue Liste erst
-    // beim naechsten Start). Wirkt ab sofort — auch fuer einen gerade laufenden Anruf.
-    // MUSS auf dem Main-Thread laufen: persist() liest ~20 @Published-Felder, die die
-    // UI live editiert — ein Hintergrund-persist() waere ein Data-Race auf raw + den
-    // Feldern. Nur der Daemon-Neustart (Subprozess) darf async, damit die UI nicht haengt.
+    // Only recording-list fields are saved here. Other unfinished settings stay
+    // in the UI until Save & restart; the recorder reloads this list while idle.
+    func setRecordingApp(pattern: String, enabled: Bool) {
+        do {
+            recordingApps = try RecordingAppList.setEnabled(enabled, pattern: pattern,
+                                                            at: URL(fileURLWithPath: configPath))
+            status = currentCall == nil
+                ? L("✅ Anruf-Liste gespeichert", "✅ Recording list saved")
+                : L("✅ Gespeichert — gilt nach der laufenden Aufnahme", "✅ Saved — applies after the current recording")
+        } catch {
+            refreshRecordingApps()
+            status = L("❌ Anruf-Liste nicht gespeichert: ", "❌ Recording list was not saved: ") + error.localizedDescription
+        }
+    }
+
     func alwaysRecord(pattern: String) {
         guard !pattern.isEmpty else { return }
-        var apps = (raw["apps"] as? [String]) ?? []
-        if !apps.contains(pattern) { apps.append(pattern) }
-        raw["apps"] = apps
-        guard persist() else { return }
-        DispatchQueue.global().async { [weak self] in
-            _ = self?.run(["/bin/launchctl", "kickstart", "-k", "gui/\(getuid())/at.dasgeht.callwatch"])
-        }
+        setRecordingApp(pattern: pattern, enabled: true)
     }
 
     private func pollCurrentCall() {
@@ -1270,6 +1284,65 @@ struct PathRow: View {
     }
 }
 
+struct RecordingAppsSection: View {
+    @EnvironmentObject var store: Store
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L("ANRUF-LISTE", "RECORDING APPS"))
+                .font(.caption2.weight(.bold)).foregroundColor(.secondary)
+            Text(store.currentCall == nil
+                 ? L("Schalter werden automatisch gespeichert und in wenigen Sekunden übernommen.",
+                     "Switches save automatically and take effect within a few seconds.")
+                 : L("Schalter werden automatisch gespeichert. Änderungen gelten nach der laufenden Aufnahme.",
+                     "Switches save automatically. Changes apply after the current recording finishes."))
+                .font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(store.recordingApps.entries) { entry in
+                        Toggle(isOn: Binding(
+                            get: { store.recordingApps.enabled.contains(entry.pattern) },
+                            set: { store.setRecordingApp(pattern: entry.pattern, enabled: $0) }
+                        )) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(displayName(entry)).font(.caption.weight(.medium))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if entry.name != entry.pattern {
+                                    Text(entry.pattern).font(.caption2.monospaced()).foregroundColor(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .toggleStyle(.switch).controlSize(.small)
+                        .accessibilityLabel(displayName(entry))
+                        .accessibilityHint(entry.pattern)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+            }
+            .frame(height: 240)
+            .background(Color.primary.opacity(0.04))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            Text(L("* steht für verwandte Prozesse. Ein anderes aktiviertes Muster kann dieselbe App weiterhin aufnehmen.",
+                   "* matches related processes. Another enabled pattern can still record the same app."))
+                .font(.caption2).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(width: 372, alignment: .leading)
+    }
+
+    private func displayName(_ entry: RecordingAppEntry) -> String {
+        switch entry.pattern {
+        case "com.apple.TelephonyUtilities": return L("Continuity / iPhone-Anrufe", "Continuity / iPhone calls")
+        case "com.apple.avconferenced": return L("FaceTime-Audiodienst", "FaceTime audio service")
+        case "com.apple.Phone": return L("Telefon", "Phone")
+        case "com.microsoft.teams": return L("Microsoft Teams (klassisch)", "Microsoft Teams (classic)")
+        default: return entry.name
+        }
+    }
+}
+
 struct SettingsSection: View {
     @EnvironmentObject var store: Store
 
@@ -1287,6 +1360,8 @@ struct SettingsSection: View {
             }
             .pickerStyle(.segmented).labelsHidden()
             .onChange(of: store.uiLanguage) { _ in store.applyLanguageChange() }
+
+            RecordingAppsSection()
 
             Text(L("SPEICHERORTE", "STORAGE LOCATIONS")).font(.caption2.weight(.bold)).foregroundColor(.secondary).padding(.top, 4)
             PathRow(label: L("Notizen", "Notes"), path: $store.notesDir,
@@ -1325,7 +1400,7 @@ struct SettingsSection: View {
             .padding(.top, 4)
             Picker("", selection: $store.summarizer) {
                 Text("Claude Code").tag("claude")
-                Text(L("Eigene KI (OpenAI-API)", "Custom AI (OpenAI API)")).tag("openai")
+                Text(L("Eigene KI", "Custom AI")).tag("openai")
                 Text(L("Aus", "Off")).tag("off")
             }
             .pickerStyle(.segmented).labelsHidden()
@@ -1510,7 +1585,7 @@ struct MenuPanelView: View {
                                     .font(.caption).foregroundColor(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Button {
-                                    store.alwaysRecord(pattern: m.addPattern)  // Main-Thread; Neustart async intern
+                                    store.alwaysRecord(pattern: m.addPattern)  // Main-Thread; Liste wird automatisch gespeichert
                                 } label: {
                                     Label(L("Diese App immer aufnehmen", "Always record this app"),
                                           systemImage: "plus.circle.fill")
@@ -1638,7 +1713,7 @@ struct MenuPanelView: View {
 
             HStack {
                 if !store.status.isEmpty {
-                    Text(store.status).font(.caption).foregroundColor(.secondary).lineLimit(1)
+                    Text(store.status).font(.caption).foregroundColor(.secondary).lineLimit(1).help(store.status)
                 }
                 Spacer()
                 Button(L("Beenden", "Quit")) { NSApp.terminate(nil) }
@@ -1647,6 +1722,7 @@ struct MenuPanelView: View {
                     .hoverHighlight()
             }
         }
+        .frame(width: 372, alignment: .leading)
         .padding(14)
         .frame(width: 400)
         }
@@ -1742,7 +1818,9 @@ final class StandalonePanel {
 
 // MARK: - App
 
+#if !CALLNOTES_TESTING
 @main
+#endif
 struct CallNotesApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var store = Store(showcase: ProcessInfo.processInfo.environment["CALLNOTES_SHOWCASE"])
