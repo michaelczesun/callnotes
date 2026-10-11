@@ -28,7 +28,7 @@ echo "OK: $APP"
 # --- CallNotes.app (Menueleiste) -------------------------------------------------
 APP2="$APPS/CallNotes.app"
 mkdir -p "$APP2/Contents/MacOS" "$APP2/Contents/Resources"
-swiftc -O -parse-as-library SettingsApp.swift RecordingApps.swift -o "$APP2/Contents/MacOS/CallNotes" \
+swiftc -O -parse-as-library SettingsApp.swift RecordingApps.swift AppText.swift -o "$APP2/Contents/MacOS/CallNotes" \
   -framework SwiftUI -framework AppKit -framework AVFoundation -framework Foundation
 cp CallNotes-Info.plist "$APP2/Contents/Info.plist"
 cp assets/AppIcon.icns "$APP2/Contents/Resources/AppIcon.icns" 2>/dev/null || true

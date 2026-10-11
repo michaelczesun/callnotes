@@ -165,6 +165,15 @@ kann dieselbe App weiterhin erfassen. Andere Einstellungen werden weiterhin übe
 Regressionstests: `bash tests/run-recording-apps.sh` (Xcode Command Line Tools nötig;
 Tests verwenden temporäre Konfigurationen und starten keine Aufnahme).
 
+Die gewählte Oberflächensprache gilt auch für Fortschrittsmeldungen,
+Standard-Sprecherlabels, Fehlermeldungen und Benachrichtigungen. Sie ist unabhängig
+von der Transkriptions- und Notizsprache (`language`). Vorhandene Statusmeldungen
+und Sprecherlabels werden für die Anzeige übersetzt; gespeicherte Kennungen,
+Notizen, Teilnehmernamen und Pfade bleiben erhalten.
+
+Lokalisierungstests: `bash tests/run-localization.sh`. Benachrichtigungen werden
+nur lokal erfasst und nicht versendet.
+
 | Feld | Bedeutung |
 |---|---|
 | `apps` | Bundle-IDs, deren Mikrofon-Nutzung eine Aufnahme startet |
