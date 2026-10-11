@@ -176,7 +176,7 @@ capture output locally and do not send notifications.
 | `noteSections` | which sections Claude writes: summary, discussed, todos, follow-up email |
 | `destinations` | extra delivery: Apple Notes, Nextcloud (WebDAV), Notion |
 | `notesDir` / `audioDir` / `mirrorDir` | where notes, audio and the external-drive mirror go |
-| `diarize` / `diarizeThreshold` | multi-speaker detection on/off, clustering threshold |
+| `diarize` / `diarizeThreshold` | multi-speaker detection on/off; similarity threshold, default `0.4` (higher = splits into more speakers) |
 | `speakerSelf` / `context` | your name in transcripts + one line of context for better summaries |
 
 ## CLI

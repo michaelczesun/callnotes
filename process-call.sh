@@ -7,6 +7,13 @@
 set -uo pipefail
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin"
 
+# Im Hintergrund-Modus rechnen (QoS "utility"): Transkription und Sprecher-Erkennung
+# weichen aktiver Arbeit am Mac aus, statt ihn minutenlang zu blockieren.
+if [ -z "${CALLNOTES_QOS:-}" ] && command -v taskpolicy >/dev/null 2>&1; then
+  export CALLNOTES_QOS=1
+  exec taskpolicy -c utility /bin/bash "$0" "$@"
+fi
+
 REC="${1:?Nutzung: process-call.sh <aufnahme-verzeichnis>}"
 REC="${REC%/}"
 CFG="${CALLNOTES_CONFIG:-$HOME/.config/callnotes/config.json}"
@@ -33,7 +40,7 @@ p("PEER_LABEL", d.get("speakerPeer") or "")
 p("CONTEXT", d.get("context") or "")
 p("MOC_ON", "1" if d.get("notesMoc", True) else "0")
 p("DIARIZE", "1" if d.get("diarize", True) else "0")
-p("DIA_THRESHOLD", str(d.get("diarizeThreshold") or 0.6))
+p("DIA_THRESHOLD", str(d.get("diarizeThreshold") or 0.4))
 p("VENV_PY", path("venvPython", "~/.local/share/callnotes/venv/bin/python3"))
 p("TRANSCRIBER", d.get("transcriber") or "local")
 p("GROQ_KEY_CFG", d.get("groqApiKey") or "")
@@ -171,8 +178,22 @@ transcribe() { # $1=caf $2=outbase(label) $3=wav behalten (optional "keep")
   fi
   # Parakeet TDT v3 (lokal via sherpa-onnx, sehr schnell, 25 EU-Sprachen) — Fallback whisper
   if [ "$TRANSCRIBER" = "parakeet" ] && [ -x "$VENV_PY" ]; then
-    "$VENV_PY" "$SCRIPT_DIR/transcribe_parakeet.py" "$wav" "$REC/$2.json" 2>>"$REC/parakeet.log" \
-      || say "  Parakeet nicht verfuegbar (Modell fehlt? ./install.sh --with-parakeet) — Fallback whisper"
+    "$VENV_PY" "$SCRIPT_DIR/transcribe_parakeet.py" "$wav" "$REC/$2.json" 2>>"$REC/parakeet.log"
+    local prc=$?
+    if [ $prc -ne 0 ]; then
+      rm -f "$REC/$2.json"
+      # Ehrlicher Grund statt pauschal "Modell fehlt": 137 = vom System gekillt (Speicher)
+      case $prc in
+        137) say "  Parakeet vom System abgebrochen (Speicher voll) — Fallback whisper" ;;
+        *) if grep -q "Parakeet-Modell" "$REC/parakeet.log" 2>/dev/null; then
+             say "  Parakeet-Modell fehlt (./install.sh --with-parakeet) — Fallback whisper"
+           else
+             say "  Parakeet fehlgeschlagen (Code $prc, Details parakeet.log) — Fallback whisper"
+           fi ;;
+      esac
+    else
+      tail -1 "$REC/parakeet.log" 2>/dev/null | sed 's/^/  Parakeet: /'
+    fi
   fi
   # Groq-Cloud-Whisper (optional, schneller bei langen Calls) — Fallback lokal
   if [ "$TRANSCRIBER" = "groq" ] && [ -n "$GROQ_KEY" ]; then
@@ -209,7 +230,7 @@ DIA_JSON="$REC/diarization.json"
 N_SPEAKERS=1
 if [ "$DIARIZE" = "1" ] && [ $SYS_OK -eq 0 ] && [ -x "$VENV_PY" ] && [ -s "$REC/system.16k.wav" ]; then
   phase "$T_PH_DIA"
-  say "Diarisierung (sherpa-onnx) …"
+  say "Sprecher-Erkennung (Stimm-Fingerabdruck je Abschnitt) …"
   "$VENV_PY" "$SCRIPT_DIR/diarize.py" "$REC/system.16k.wav" "$DIA_THRESHOLD" > "$DIA_JSON" 2>>"$REC/diarize.log" || rm -f "$DIA_JSON"
   if [ -s "$DIA_JSON" ]; then
     N_SPEAKERS=$(python3 -c "import json;print(json.load(open('$DIA_JSON')).get('speakers',1))" 2>/dev/null || echo 1)

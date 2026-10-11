@@ -4,6 +4,39 @@ All notable changes to CallNotes (macOS). Newest first.
 Format follows [Keep a Changelog](https://keepachangelog.com); full notes per
 version are on the [Releases page](https://github.com/michaelczesun/callnotes/releases).
 
+## 1.5.0 — 2026-10-11
+Big reliability and resource overhaul, measured on real call recordings (11-138 min).
+### Fixed
+- **Parakeet no longer crashes on long calls.** The whole recording was fed into the
+  model at once; memory grew with call length until macOS killed it (`Killed: 9`)
+  after 10-25 minutes of full load, then Whisper took over anyway. Every call longer
+  than ~10 min was affected. Parakeet now decodes speech in chunks of up to 20 s
+  found by a voice-activity detector (silero VAD) and skips silence: a 33-min call
+  takes ~2-3 min per track at ~1 GB peak memory, on 2 CPU cores.
+- **Speaker detection no longer invents speakers.** New engine: one voice
+  fingerprint per speech segment, grouped by similarity. 1:1 calls that reported
+  3-6 (once 173) speakers now report 1; a real 5-person team call reports 5. Runs in
+  8 s to 2.5 min instead of 5-27 min, at ~0.25 GB. Calibrated so the caller's own
+  mic track always comes out as one speaker. `diarizeThreshold` is now a similarity
+  threshold (default `0.4`, higher = more speakers).
+- Notes say "via Discord" / "via Chrome" instead of "via renderer" / "via helper".
+- **Menu bar app comes back by itself** if macOS refuses its first launch right after
+  an update ("Code Signature Invalid", a timing race right after signing; the 1.4.0
+  change only made it rarer). It is now restarted when it gets killed; quitting it
+  yourself still quits it. Run `./install.sh` once to pick up the new launch agent.
+- An honest log message when Parakeet fails (killed for memory / model missing /
+  other) instead of always "model missing?".
+### Changed
+- Processing runs at background priority (`taskpolicy -c utility`), so the Mac
+  stays responsive while a call is transcribed.
+- `install.sh` downloads the 0.6 MB silero VAD model; the pyannote segmentation
+  model is no longer needed.
+### Measured, not added
+- Noise filters (FFT, NLM, loudness normalisation) made recognition **worse** on
+  real call noise (8-12 % word errors vs 2-7 % without), so there is none. What
+  read like "noise" in notes was Whisper inventing sentences in silence; Parakeet
+  does not (0 vs 753 repetition loops on the same 33-min track).
+
 ## 1.4.0 — 2026-10-11
 First outside contributions — thank you **[@joaomotap](https://github.com/joaomotap)** (João Mota)!
 ### Added

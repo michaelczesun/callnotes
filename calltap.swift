@@ -450,12 +450,33 @@ struct WatchConfig {
 
 func expand(_ p: String) -> String { (p as NSString).expandingTildeInPath }
 
+// Anzeigename der Call-App fuer Ordner, Notiz-Titel und Push. Vom BASIS-Bundle, nicht
+// vom Hilfsprozess mit dem Mikro: sonst hiessen Notizen "Telefonat via renderer"
+// (com.hnc.Discord.helper.Renderer) oder "via helper" (com.google.Chrome.helper).
+let knownAppNames: [String: String] = [
+    "net.whatsapp.WhatsApp": "WhatsApp", "com.hnc.Discord": "Discord", "us.zoom.xos": "Zoom",
+    "com.google.Chrome": "Chrome", "com.microsoft.teams2": "Teams", "com.microsoft.teams": "Teams",
+    "com.apple.FaceTime": "FaceTime", "com.apple.avconferenced": "FaceTime",
+    "com.apple.TelephonyUtilities": "iPhone", "com.apple.Phone": "Telefon", "com.apple.WebKit": "Safari",
+    "com.apple.Safari": "Safari", "ru.keepcoder.Telegram": "Telegram",
+    "org.whispersystems.signal-desktop": "Signal", "com.brave.Browser": "Brave",
+    "org.mozilla.firefox": "Firefox", "com.microsoft.edgemac": "Edge", "company.thebrowser.Browser": "Arc",
+]
+
 func shortName(_ bundle: String, pid: pid_t) -> String {
-    if !bundle.isEmpty, let last = bundle.split(separator: ".").last {
-        return String(last).lowercased()
+    if !bundle.isEmpty {
+        var parts = bundle.split(separator: ".").map(String.init)
+        let helperParts: Set<String> = ["helper", "renderer", "gpu", "plugin", "serviceextension"]
+        if let cut = parts.firstIndex(where: { helperParts.contains($0.lowercased()) }), cut >= 2 {
+            parts = Array(parts.prefix(cut))
+        }
+        let base = parts.joined(separator: ".")
+        if let name = knownAppNames[base] { return name }
+        if let name = knownAppNames.first(where: { base.hasPrefix($0.key + ".") })?.value { return name }
+        if let last = parts.last { return last }
     }
     let n = processName(pid)
-    return n.isEmpty ? "app" : n.lowercased()
+    return n.isEmpty ? "app" : n
 }
 
 func dirStamp(_ date: Date) -> String {

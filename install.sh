@@ -79,11 +79,16 @@ if [ ! -x "$VENV/bin/python3" ]; then
     || echo "WARNUNG: venv/sherpa-onnx fehlgeschlagen — Diarisierung deaktiviert (1:1-Anrufe gehen trotzdem)."
 fi
 mkdir -p "$DIAMODELS"
-if [ ! -f "$DIAMODELS/sherpa-onnx-pyannote-segmentation-3-0/model.onnx" ]; then
-  echo "Lade Segmentierungs-Modell (~9 MB) …"
-  curl -sL --retry 4 -o "$DIAMODELS/seg.tar.bz2" \
-    "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2" \
-    && tar xjf "$DIAMODELS/seg.tar.bz2" -C "$DIAMODELS" && rm -f "$DIAMODELS/seg.tar.bz2" || echo "WARNUNG: Download fehlgeschlagen."
+# Sprachpausen-Erkennung (silero VAD, ~0,6 MB): Parakeet dekodiert damit stueckweise
+# (sonst Speicher voll bei langen Calls), die Sprecher-Erkennung nutzt dieselben Abschnitte.
+if [ ! -f "$DIAMODELS/silero_vad.onnx" ]; then
+  echo "Lade Sprachpausen-Modell (~1 MB) …"
+  for i in 1 2 3 4 5; do
+    curl -sL -f -o "$DIAMODELS/silero_vad.onnx" \
+      "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx" && break
+    rm -f "$DIAMODELS/silero_vad.onnx"; sleep 2
+  done
+  [ -f "$DIAMODELS/silero_vad.onnx" ] || echo "WARNUNG: VAD-Download fehlgeschlagen (Fallback: Energie-Schaetzung)."
 fi
 if [ ! -f "$DIAMODELS/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx" ]; then
   echo "Lade Sprecher-Embedding-Modell (~26 MB) …"

@@ -184,7 +184,7 @@ nur lokal erfasst und nicht versendet.
 | `noteSections` | welche Abschnitte die KI schreibt: Kurzfassung, Besprochen, To-dos, Follow-up-Mail |
 | `destinations` | zusätzliche Ablage: Apple Notes, Nextcloud (WebDAV), Notion |
 | `notesDir` / `audioDir` / `mirrorDir` | wohin Notizen, Audio und der Externe-Platte-Spiegel gehen |
-| `diarize` / `diarizeThreshold` | Mehrsprecher-Erkennung an/aus, Cluster-Schwelle (höher = weniger Sprecher) |
+| `diarize` / `diarizeThreshold` | Mehrsprecher-Erkennung an/aus; Ähnlichkeits-Schwelle, Standard `0.4` (höher = mehr Sprecher) |
 | `speakerSelf` / `context` | dein Name im Transkript + ein Satz Kontext für bessere Zusammenfassungen |
 
 ## CLI

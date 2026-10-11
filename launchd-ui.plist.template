@@ -10,8 +10,13 @@
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
+	<!-- Neu starten, wenn macOS die App abbricht (z. B. 'Code Signature Invalid' beim
+	     ersten Start direkt nach einem Update) - nicht, wenn man sie selbst beendet. -->
 	<key>KeepAlive</key>
-	<false/>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
 	<key>LimitLoadToSessionType</key>
 	<string>Aqua</string>
 	<key>StandardOutPath</key>

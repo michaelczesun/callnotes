@@ -1,107 +1,125 @@
 #!/usr/bin/env python3
-# diarize.py — Sprecher-Diarisierung der Gegenseiten-Spur (sherpa-onnx, lokal/offline).
-# Nutzung: diarize.py audio-16k-mono.wav [threshold] > diarization.json
+# diarize.py — Sprecher-Erkennung der Gegenseiten-Spur (lokal/offline, sherpa-onnx).
+# Nutzung: diarize.py audio-16k-mono.wav [schwelle] > diarization.json
 # Ausgabe: {"speakers": N, "segments": [{"start": s, "end": s, "speaker": 0..N-1}]}
-# Läuft im callnotes-venv (~/.local/share/callnotes/venv), Modelle in
-# ~/.local/share/callnotes/models (Override: CALLNOTES_DIARIZE_MODELS).
+#          Sprecher 0 = wer am meisten redet.
+#
+# Ablauf: Sprachabschnitte per VAD (callnotes_audio) -> je Abschnitt ein Stimm-
+# Fingerabdruck (Speaker-Embedding) -> aehnliche Abschnitte zusammenfassen
+# (agglomerativ, mittlere Kosinus-Aehnlichkeit) -> Cluster mit zu wenig Redezeit
+# dem naechsten echten Sprecher zuschlagen.
+#
+# Warum nicht mehr pyannote-Vollanalyse (bis 1.4.0): sie zerlegte EINE Stimme in
+# Dutzende Pseudo-Sprecher (bis 173 bei einem 1:1-Call) und brauchte 5-27 Min.
+# Kalibriert 11.10.2026 an echten Calls: Michaels Mikro-Spur (garantiert 1 Sprecher)
+# ergibt bei Schwelle 0.30-0.45 immer 1, Mikro+Gegenseite gemischt immer 2 (99 %
+# richtig zugeordnet), auch wenn Michaels Stimme vorher durch den Discord-Codec
+# (Opus) geht. Default 0.40 = Mitte des sicheren Bereichs. Hoeher = mehr Sprecher.
 import json
 import os
 import sys
-import wave
 
 import numpy as np
 import sherpa_onnx
 
-MODELS = os.environ.get(
-    "CALLNOTES_DIARIZE_MODELS",
-    os.path.expanduser("~/.local/share/callnotes/models"),
-)
-SEG_MODEL = os.path.join(MODELS, "sherpa-onnx-pyannote-segmentation-3-0", "model.onnx")
+from callnotes_audio import MODELS, Wav, vad_segments
+
 EMB_MODEL = os.path.join(MODELS, "3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx")
+THREADS = int(os.environ.get("CALLNOTES_THREADS", "2"))
+MIN_EMB = 1.0      # s — kuerzere Abschnitte haben keinen verlaesslichen Fingerabdruck
+MAX_EMB = 10.0     # s — von langen Abschnitten reicht die Mitte
+# Echter Sprecher: >= 15 s UND >= 2 % der Redezeit. Gemessen 11.10.: in 1:1-Calls sind alle
+# Neben-Cluster Kruemel (<= 5 s, <= 1,5 %), im Team-Call hat der stillste Teilnehmer 56 s (3,3 %).
+MIN_DUR, MIN_SHARE = 15.0, 0.02
 
 
-def read_wav_mono16k(path):
-    with wave.open(path, "rb") as w:
-        assert w.getsampwidth() == 2, "erwartet 16-bit PCM"
-        rate = w.getframerate()
-        frames = w.readframes(w.getnframes())
-    samples = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
-    if w.getnchannels() > 1:
-        samples = samples.reshape(-1, w.getnchannels()).mean(axis=1)
-    return samples, rate
+def cluster(E, threshold):
+    """Agglomeratives Clustering (average linkage, Kosinus); stoppt unter threshold."""
+    n = len(E)
+    C = (E @ E.T).astype(np.float64)
+    np.fill_diagonal(C, -np.inf)
+    size = np.ones(n)
+    members = [[i] for i in range(n)]
+    for _ in range(n - 1):
+        k = int(np.argmax(C))
+        i, j = divmod(k, n)
+        if C[i, j] < threshold:
+            break
+        row = (size[i] * C[i] + size[j] * C[j]) / (size[i] + size[j])
+        C[i], C[:, i] = row, row
+        C[i, i] = -np.inf
+        C[j], C[:, j] = -np.inf, -np.inf
+        size[i] += size[j]
+        members[i] += members[j]
+        members[j] = []
+    lab = np.empty(n, int)
+    for c, m in enumerate(m for m in members if m):
+        lab[m] = c
+    return lab
 
 
 def main():
     if len(sys.argv) < 2:
-        sys.exit("Nutzung: diarize.py audio-16k-mono.wav [threshold]")
+        sys.exit("Nutzung: diarize.py audio-16k-mono.wav [schwelle]")
     wav_path = sys.argv[1]
-    threshold = float(sys.argv[2]) if len(sys.argv) > 2 else 0.6
+    threshold = float(sys.argv[2]) if len(sys.argv) > 2 else 0.40
+    if not os.path.exists(EMB_MODEL):
+        sys.exit(f"Modell fehlt: {EMB_MODEL} (install.sh laedt die Diarisierungs-Modelle)")
 
-    for m in (SEG_MODEL, EMB_MODEL):
-        if not os.path.exists(m):
-            sys.exit(f"Modell fehlt: {m} (install.sh laedt die Diarisierungs-Modelle)")
+    wav = Wav(wav_path)
+    rate = wav.rate
+    segs = vad_segments(wav)
+    if not segs:
+        json.dump({"speakers": 0, "segments": []}, sys.stdout)
+        print()
+        return
 
-    samples, rate = read_wav_mono16k(wav_path)
+    ex = sherpa_onnx.SpeakerEmbeddingExtractor(
+        sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=EMB_MODEL, num_threads=THREADS))
+    long_idx, emb = [], []
+    for i, (s, e) in enumerate(segs):
+        if (e - s) / rate < MIN_EMB:
+            continue
+        if (e - s) / rate > MAX_EMB:
+            mid, half = (s + e) // 2, int(MAX_EMB * rate / 2)
+            s, e = mid - half, mid + half
+        st = ex.create_stream()
+        st.accept_waveform(rate, wav.read(s, e))
+        st.input_finished()
+        v = np.array(ex.compute(st))
+        emb.append(v / (np.linalg.norm(v) + 1e-9))
+        long_idx.append(i)
 
-    config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
-        segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
-            pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(
-                model=SEG_MODEL
-            ),
-        ),
-        embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=EMB_MODEL),
-        clustering=sherpa_onnx.FastClusteringConfig(num_clusters=-1, threshold=threshold),
-        min_duration_on=0.3,
-        min_duration_off=0.5,
-    )
-    sd = sherpa_onnx.OfflineSpeakerDiarization(config)
-    if sd.sample_rate != rate:
-        sys.exit(f"Samplerate {rate} passt nicht (Modell erwartet {sd.sample_rate})")
+    dur = np.array([(e - s) / rate for s, e in segs])
+    labels = np.zeros(len(segs), int)
+    if len(emb) >= 2:
+        E = np.array(emb)
+        lab = cluster(E, threshold)
+        d = dur[long_idx]
+        keep = [c for c in set(lab) if d[lab == c].sum() >= max(MIN_DUR, MIN_SHARE * d.sum())]
+        if not keep:
+            keep = [max(set(lab), key=lambda c: d[lab == c].sum())]
+        cent = np.array([E[lab == c].mean(0) for c in keep])
+        cent /= np.linalg.norm(cent, axis=1, keepdims=True)
+        lab = np.array(keep)[np.argmax(E @ cent.T, axis=1)]  # Kleinst-Cluster umverteilen
+        labels[long_idx] = lab
+        # kurze Abschnitte (< MIN_EMB): Sprecher des zeitlich naechsten langen Abschnitts
+        mids = np.array([(segs[i][0] + segs[i][1]) / 2 for i in long_idx])
+        long_set = set(long_idx)
+        for i, (s, e) in enumerate(segs):
+            if i not in long_set:
+                labels[i] = lab[int(np.argmin(np.abs(mids - (s + e) / 2)))]
+        # Sprecher nach Redezeit nummerieren (0 = Hauptsprecher)
+        order = sorted(set(labels), key=lambda c: -dur[labels == c].sum())
+        labels = np.array([order.index(c) for c in labels])
 
-    result = sd.process(samples).sort_by_start_time()
-    segments = [
-        {"start": round(s.start, 2), "end": round(s.end, 2), "speaker": s.speaker}
-        for s in result
-    ]
-
-    # Sprecher nach GESAMT-Redezeit gewichten. Winzige Cluster (Echo der eigenen
-    # Stimme im getappten Ton, Rauschen, Whisper-Artefakte) sind KEINE echten
-    # Teilnehmer — sonst "hoert" die Diarisierung bei einem 1:1-Anruf Dutzende Sprecher.
-    dur = {}
-    for s in segments:
-        dur[s["speaker"]] = dur.get(s["speaker"], 0.0) + (s["end"] - s["start"])
-    total = sum(dur.values()) or 1.0
-    MIN_DUR, MIN_SHARE = 4.0, 0.03  # echte Stimme: >=4s UND >=3% der Redezeit
-    significant = sorted(
-        (spk for spk, d in dur.items() if d >= MIN_DUR and d / total >= MIN_SHARE),
-        key=lambda spk: -dur[spk],
-    )
-
-    if len(significant) <= 1:
-        # ein realer Gegenueber -> keine Aufsplittung, alle Segmente auf Sprecher 0
-        for s in segments:
-            s["speaker"] = 0
-        speakers = 1
-    else:
-        remap = {spk: i for i, spk in enumerate(significant)}
-        sig_set = set(significant)
-        # (start, end, original_speaker) VOR dem Umnummerieren einfrieren
-        sig_segs = [(s["start"], s["end"], s["speaker"]) for s in segments if s["speaker"] in sig_set]
-        for s in segments:
-            if s["speaker"] in remap:
-                s["speaker"] = remap[s["speaker"]]
-            else:
-                # unbedeutendes Segment dem zeitlich naechsten echten Sprecher zuschlagen
-                mid = (s["start"] + s["end"]) / 2
-                st, en, best = min(
-                    sig_segs,
-                    key=lambda t: 0 if t[0] <= mid <= t[1] else min(abs(mid - t[0]), abs(mid - t[1])),
-                )
-                s["speaker"] = remap[best]
-        speakers = len(significant)
-
-    json.dump({"speakers": speakers, "segments": segments}, sys.stdout)
+    out = [{"start": round(s / rate, 2), "end": round(e / rate, 2), "speaker": int(c)}
+           for (s, e), c in zip(segs, labels)]
+    n = len(set(labels))
+    json.dump({"speakers": n, "segments": out}, sys.stdout)
     print()
+    print(f"{n} Sprecher | {len(segs)} Abschnitte, {len(emb)} mit Fingerabdruck, "
+          f"Schwelle {threshold}", file=sys.stderr)
 
 
 if __name__ == "__main__":

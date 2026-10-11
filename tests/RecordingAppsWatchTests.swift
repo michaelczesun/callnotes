@@ -29,6 +29,11 @@ struct RecordingAppsWatchTests {
         check(try runtime.reload(from: url, isRecording: false), "helper reloads after recording ends")
         check(!runtime.matches("custom.call.helper") && runtime.matches("latest.call") && runtime.matches("second.call"), "next call uses latest saved list")
         check(cfg.minSeconds == 25 && cfg.stopGraceSeconds == 8, "list reload leaves other recorder settings unchanged")
+        check(shortName("com.hnc.Discord.helper.Renderer", pid: 0) == "Discord", "Discord helper is named Discord, not renderer")
+        check(shortName("com.google.Chrome.helper", pid: 0) == "Chrome", "Chrome helper is named Chrome, not helper")
+        check(shortName("com.apple.WebKit.GPU", pid: 0) == "Safari", "WebKit GPU process is named Safari")
+        check(shortName("net.whatsapp.WhatsApp", pid: 0) == "WhatsApp", "known app keeps its readable name")
+        check(shortName("com.example.CallApp", pid: 0) == "CallApp", "unknown app uses its last bundle component")
         print("All recording-list recorder tests passed")
     }
 }

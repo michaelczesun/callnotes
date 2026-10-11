@@ -43,6 +43,13 @@ transcriber, ~700 MB):
 - Whisper repetition loops are handled in `merge-transcript.py`
   (`collapse_repeats`); Parakeet (NeMo BPE) marks word starts with a SPACE
   prefix, not `▁`.
+- NEVER feed a whole call into one Parakeet stream: encoder memory explodes with
+  length and macOS kills it (`Killed: 9`) after 10-25 min on 8 GB Macs.
+  `transcribe_parakeet.py` decodes VAD chunks <= 20 s (`callnotes_audio.py`,
+  silero_vad.onnx); test any change on a 30+ min recording, not a short clip.
+- `diarize.py` clusters one speaker embedding per VAD segment (threshold 0.40,
+  higher = more speakers). Calibration check: Michael's own mic track must always
+  come out as exactly 1 speaker.
 - Groq/HF endpoints reject Python-urllib's default User-Agent — always send a
   custom UA.
 - bash 3.2 (macOS default): single quotes inside `$(python3 - <<'PY' ...)`
